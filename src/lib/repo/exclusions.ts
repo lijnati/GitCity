@@ -30,7 +30,7 @@ export const DEFAULT_EXCLUSIONS: ExclusionConfig = {
   ],
   extensions: [
     // binary / media / archives — not source code
-    "png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "bmp", "tiff", "psd",
+    "png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "icns", "bmp", "tiff", "psd",
     "mp3", "mp4", "mov", "webm", "wav", "ogg", "flac",
     "woff", "woff2", "ttf", "otf", "eot",
     "zip", "gz", "tgz", "bz2", "xz", "7z", "rar", "jar", "war",

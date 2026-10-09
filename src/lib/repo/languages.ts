@@ -20,10 +20,10 @@ export const LANGUAGES: Record<string, LanguageInfo> = {
   javascript: L("javascript", "JavaScript", "#d9a521", "c"),
   python: L("python", "Python", "#3d7f6d", "hash"),
   go: L("go", "Go", "#2aa3b8", "c"),
-  rust: L("rust", "Rust", "#b5532c", "c"),
+  rust: L("rust", "Rust", "#ad4a26", "c"),
   java: L("java", "Java", "#a2492f", "c"),
-  kotlin: L("kotlin", "Kotlin", "#7a5bc4", "c"),
-  swift: L("swift", "Swift", "#e0663a", "c"),
+  kotlin: L("kotlin", "Kotlin", "#6a5fd0", "c"),
+  swift: L("swift", "Swift", "#ef8a34", "c"),
   c: L("c", "C", "#5d6b78", "c"),
   cpp: L("cpp", "C++", "#c2416b", "c"),
   csharp: L("csharp", "C#", "#3f8f3a", "c"),
@@ -32,15 +32,18 @@ export const LANGUAGES: Record<string, LanguageInfo> = {
   scala: L("scala", "Scala", "#c63a3a", "c"),
   dart: L("dart", "Dart", "#1b8ac7", "c"),
   shell: L("shell", "Shell", "#6a8f3a", "hash"),
-  html: L("html", "HTML", "#d4593a", "none"),
-  css: L("css", "CSS", "#7b4ea3", "none"),
+  html: L("html", "HTML", "#d0678c", "none"),
+  css: L("css", "CSS", "#9a4fae", "none"),
   vue: L("vue", "Vue", "#3f9b6e", "c"),
   svelte: L("svelte", "Svelte", "#e2552b", "c"),
-  markdown: L("markdown", "Markdown", "#8b8f94", "none"),
-  json: L("json", "JSON", "#a9a07e", "none"),
-  yaml: L("yaml", "YAML", "#b37f8f", "none"),
-  toml: L("toml", "TOML", "#9a7c5c", "none"),
+  markdown: L("markdown", "Markdown", "#8d9399", "none"),
+  json: L("json", "JSON", "#b3aa86", "none"),
+  yaml: L("yaml", "YAML", "#b49ea4", "none"),
+  toml: L("toml", "TOML", "#a38f76", "none"),
   sql: L("sql", "SQL", "#c78a2c", "none"),
+  xml: L("xml", "XML", "#8a7a5e", "none"),
+  config: L("config", "Config", "#b8b09e", "none"),
+  text: L("text", "Plain text", "#c4bfb4", "none"),
   other: L("other", "Other", "#a7a39b", "none"),
 };
 
@@ -70,6 +73,12 @@ const EXT: Record<string, string> = {
   yml: "yaml", yaml: "yaml",
   toml: "toml",
   sql: "sql",
+  ps1: "shell", bat: "shell", cmd: "shell",
+  xml: "xml", plist: "xml", xsd: "xml", storyboard: "xml", xib: "xml", wxs: "xml", wxl: "xml", csproj: "xml",
+  ini: "config", cfg: "config", conf: "config", properties: "config", editorconfig: "config", env: "config",
+  gitignore: "config", gitattributes: "config", npmignore: "config", dockerignore: "config", prettierignore: "config",
+  eslintignore: "config", prettierrc: "config", npmrc: "config", nvmrc: "config", taurignore: "config",
+  txt: "text",
 };
 
 const FILENAMES: Record<string, string> = {
@@ -77,6 +86,11 @@ const FILENAMES: Record<string, string> = {
   Makefile: "shell",
   Rakefile: "ruby",
   Gemfile: "ruby",
+  Podfile: "ruby",
+  CODEOWNERS: "config",
+  LICENSE: "text",
+  NOTICE: "text",
+  AUTHORS: "text",
 };
 
 export function extensionOf(path: string): string {
@@ -97,8 +111,11 @@ export function dirname(path: string): string {
 }
 
 export function detectLanguage(path: string): string {
-  const byName = FILENAMES[basename(path)];
+  const name = basename(path);
+  const byName = FILENAMES[name];
   if (byName) return byName;
+  if (/^(?:LICEN[CS]E|COPYING)(?:[-.]|$)/i.test(name)) return "text";
+  if (/^Dockerfile(?:\.|$)/.test(name)) return "shell";
   return EXT[extensionOf(path)] ?? "other";
 }
 

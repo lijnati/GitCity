@@ -33,7 +33,6 @@ export function parseRepoInput(raw: string): ParseResult {
   let input = raw.trim();
   if (input.length === 0) return fail("Enter a repository like owner/name.");
   if (input.length > MAX_INPUT_LENGTH) return fail("That input is too long to be a GitHub repository URL.");
-  // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f\s\\]/.test(input)) return fail("Repository URLs cannot contain spaces or control characters.");
 
   const schemeMatch = /^([a-z][a-z0-9+.-]*):\/\//i.exec(input);
