@@ -96,7 +96,9 @@ const FILENAMES: Record<string, string> = {
 export function extensionOf(path: string): string {
   const name = basename(path);
   const dot = name.lastIndexOf(".");
-  if (dot <= 0 || dot === name.length - 1) return "";
+  // Dotfiles such as `.gitignore` use the part after the leading dot.
+  if (dot === 0) return name.slice(1).toLowerCase();
+  if (dot < 0 || dot === name.length - 1) return "";
   return name.slice(dot + 1).toLowerCase();
 }
 

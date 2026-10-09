@@ -58,7 +58,10 @@ describe("languages and exclusions", () => {
     ["lib/x.py", "python"],
     ["Dockerfile", "shell"],
     ["README", "other"],
-    [".gitignore", "other"],
+    [".gitignore", "config"],
+    [".env", "config"],
+    ["LICENSE-MIT", "text"],
+    ["Dockerfile.dev", "shell"],
   ])("%s → %s", (p, lang) => expect(detectLanguage(p)).toBe(lang));
 
   it.each([

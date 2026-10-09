@@ -1,6 +1,6 @@
 "use client";
 
-import { Html, OrbitControls } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import {
@@ -72,6 +72,8 @@ export default function CityScene(props: CitySceneProps) {
   const [interacted, setInteracted] = useState(false);
   const spinning = autoRotate && !interacted && !props.reducedMotion;
   const downAt = useRef<{ x: number; y: number } | null>(null);
+  const labels = useMemo(() => labelCandidates(layout.blocks), [layout.blocks]);
+  const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const extent = Math.max(layout.bounds.maxX - layout.bounds.minX, layout.bounds.maxZ - layout.bounds.minZ, 20);
 
   return (
@@ -111,7 +113,7 @@ export default function CityScene(props: CitySceneProps) {
         <Plinths blocks={layout.blocks} />
         <Buildings {...props} />
         <Selection layout={layout} selectedId={props.selectedId} />
-        {props.showLabels && <Labels blocks={layout.blocks} />}
+        <LabelUpdater candidates={labels} refs={labelRefs} enabled={props.showLabels} />
         <OrbitControls
           makeDefault
           enableDamping
@@ -127,6 +129,7 @@ export default function CityScene(props: CitySceneProps) {
         />
         <CameraRig layout={layout} cameraRef={props.cameraRef} reducedMotion={props.reducedMotion ?? false} />
       </Canvas>
+      <LabelLayer candidates={labels} refs={labelRefs} />
     </div>
   );
 }
@@ -381,31 +384,40 @@ function Selection({ layout, selectedId }: { layout: CityLayout; selectedId: num
   );
 }
 
+/** Label candidates in priority order: shallow, then large, then by path. */
+function labelCandidates(blocks: Block[]): Block[] {
+  return [...blocks]
+    .filter((b) => b.depth <= 3)
+    .sort((a, b) => a.depth - b.depth || b.fileCount - a.fileCount || (a.path < b.path ? -1 : 1))
+    .slice(0, 70);
+}
+
 /**
- * Neighbourhood labels. A label is shown only when its block is large enough on
- * screen to carry it, which gives distance-aware level of detail for free.
+ * Neighbourhood labels live in a plain DOM layer above the canvas (owned by React
+ * outside the R3F tree, so tear-down never races WebGL). This component positions
+ * them each frame. A label shows only when its block is wide enough on screen to
+ * carry it — distance-aware level of detail — and never overlaps a higher-priority label.
  */
-function Labels({ blocks }: { blocks: Block[] }) {
-  const candidates = useMemo(
-    () =>
-      [...blocks]
-        .filter((b) => b.depth <= 3)
-        .sort((a, b) => a.depth - b.depth || b.fileCount - a.fileCount || (a.path < b.path ? -1 : 1))
-        .slice(0, 70),
-    [blocks],
-  );
-  const refs = useRef<(HTMLDivElement | null)[]>([]);
+function LabelUpdater({ candidates, refs, enabled }: { candidates: Block[]; refs: React.RefObject<(HTMLDivElement | null)[]>; enabled: boolean }) {
   const camera = useThree((s) => s.camera) as PerspectiveCamera;
   const size = useThree((s) => s.size);
+  const invalidate = useThree((s) => s.invalidate);
   const v = useMemo(() => new Vector3(), []);
-
   const placed = useMemo<{ x0: number; y0: number; x1: number; y1: number }[]>(() => [], []);
+  useEffect(() => invalidate(), [enabled, candidates, invalidate]);
+
   useFrame(() => {
+    const els = refs.current;
+    if (!enabled) {
+      els.forEach((el) => {
+        if (el) el.style.opacity = "0";
+      });
+      return;
+    }
     const pxPerUnitAt1 = size.height / (2 * Math.tan((camera.fov * Math.PI) / 360));
     placed.length = 0;
-    // Candidates are in priority order; greedily keep labels whose screen boxes don't collide.
     candidates.forEach((b, i) => {
-      const el = refs.current[i];
+      const el = els[i];
       if (!el) return;
       v.set(b.x + b.w / 2, b.depth * PLINTH_HEIGHT, b.z + b.d);
       const dist = camera.position.distanceTo(v);
@@ -418,35 +430,34 @@ function Labels({ blocks }: { blocks: Block[] }) {
         const sy = ((1 - v.y) / 2) * size.height - 10;
         const box = { x0: sx - width / 2 - 4, y0: sy - 10, x1: sx + width / 2 + 4, y1: sy + 10 };
         if (v.z > 1 || placed.some((p) => box.x0 < p.x1 && box.x1 > p.x0 && box.y0 < p.y1 && box.y1 > p.y0)) show = false;
-        else placed.push(box);
+        else {
+          placed.push(box);
+          el.style.transform = `translate3d(${sx.toFixed(1)}px, ${sy.toFixed(1)}px, 0) translate(-50%, -50%)`;
+        }
       }
       el.style.opacity = show ? String(Math.min(1, (projected - width - 12) / 40)) : "0";
     });
   });
+  return null;
+}
 
+function LabelLayer({ candidates, refs }: { candidates: Block[]; refs: React.RefObject<(HTMLDivElement | null)[]> }) {
   return (
-    <>
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
       {candidates.map((b, i) => (
-        <Html
+        <div
           key={b.path}
-          position={[b.x + b.w / 2, b.depth * PLINTH_HEIGHT + 0.05, b.z + b.d]}
-          center
-          zIndexRange={[20, 0]}
-          style={{ pointerEvents: "none" }}
+          ref={(el) => {
+            refs.current[i] = el;
+          }}
+          className="absolute left-0 top-0 whitespace-nowrap font-mono text-[11px] leading-none tracking-tight text-ink opacity-0 transition-opacity duration-200 will-change-transform"
         >
-          <div
-            ref={(el) => {
-              refs.current[i] = el;
-            }}
-            className="translate-y-[-10px] whitespace-nowrap font-mono text-[11px] leading-none tracking-tight text-ink opacity-0 transition-opacity duration-200"
-          >
-            <span className={b.depth === 1 ? "border border-ink/80 bg-paper px-1 py-0.5 font-semibold" : "border border-line-strong bg-paper/90 px-1 py-0.5 text-ink-2"}>
-              {b.name}/
-            </span>
-          </div>
-        </Html>
+          <span className={b.depth === 1 ? "border border-ink/80 bg-paper px-1 py-0.5 font-semibold" : "border border-line-strong bg-paper/90 px-1 py-0.5 text-ink-2"}>
+            {b.name}/
+          </span>
+        </div>
       ))}
-    </>
+    </div>
   );
 }
 
@@ -534,7 +545,7 @@ function CameraRig({ layout, cameraRef, reducedMotion }: { layout: CityLayout; c
         if (!b) return;
         const base = buildingBase(b);
         const target: [number, number, number] = [b.x, base + b.h * 0.45, b.z];
-        const dist = Math.max(14, b.h * 2.4 + b.w * 4);
+        const dist = Math.max(70, b.h * 4 + b.w * 8);
         const dir = currentDirection();
         const lifted = normalize([dir[0], Math.max(dir[1], 0.45), dir[2]]);
         goTo([target[0] + lifted[0] * dist, target[1] + lifted[1] * dist, target[2] + lifted[2] * dist], target);

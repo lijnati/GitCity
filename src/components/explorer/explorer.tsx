@@ -241,7 +241,7 @@ export function Explorer({ snapshot, onSceneReady }: { snapshot: RepoSnapshot; o
               className={cn(
                 "absolute z-20 max-h-[40%] overflow-y-auto border border-line-strong bg-surface/95 text-[12px] leading-snug text-ink-2 md:max-h-none md:text-[12.5px] md:leading-relaxed",
                 "left-3 right-3 top-[60px] md:left-auto md:right-4 md:top-4 md:w-[380px]",
-                selectedBuilding && "md:hidden",
+                selectedBuilding && "hidden",
               )}
               role="note"
               data-testid="notices"
@@ -262,7 +262,7 @@ export function Explorer({ snapshot, onSceneReady }: { snapshot: RepoSnapshot; o
             <button
               type="button"
               onClick={() => setNoticesOpen(true)}
-              className={cn("absolute right-3 top-3 z-20 grid size-9 place-items-center border border-line-strong bg-surface text-muted hover:text-ink md:right-4 md:top-4", selectedBuilding && "md:hidden")}
+              className={cn("absolute right-3 top-3 z-20 grid size-9 place-items-center border border-line-strong bg-surface text-muted hover:text-ink md:right-4 md:top-4", selectedBuilding && "hidden")}
               aria-label="Show notes about this city"
             >
               <Info className="size-4" />
