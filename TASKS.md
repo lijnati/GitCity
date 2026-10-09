@@ -40,6 +40,12 @@
 - [x] screenshots reviewed (docs/screenshots)
 - [x] README
 
+## Time-lapse
+- [x] History sampling (Link-header count, even spacing, head pinned), tree-only frames
+- [x] Stable union layout + per-frame values, tweened in the scene
+- [x] /api/timelapse (NDJSON progress, Blob cache, token required, rate limit)
+- [x] Playback bar, keyboard, ?timelapse=1, bundled sample time-lapse
+
 ## Deferred / next
 - [x] Persisted snapshots (Vercel Blob) for permanent share links `/city/owner/repo/<sha>`
 - [x] Shared cache across instances (latest pointer, 1 h) + Vercel Firewall rate limit

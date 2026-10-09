@@ -45,6 +45,12 @@ export interface CameraApi {
   focusBlock(path: string): void;
 }
 
+export interface FrameState {
+  h: Float32Array;
+  w: Float32Array;
+  visible: Uint8Array;
+}
+
 export interface CitySceneProps {
   layout: CityLayout;
   /** 1 = active, 0 = faded. null = everything active. */
@@ -58,6 +64,11 @@ export interface CitySceneProps {
   reducedMotion?: boolean;
   /** Slow idle orbit for the landing preview. */
   autoRotate?: boolean;
+  /**
+   * Time-lapse frame: per-building height, footprint and visibility (indexed by
+   * building id). Buildings tween to it; positions never change.
+   */
+  frame?: FrameState | null;
   onReady?: () => void;
   onContextLost?: () => void;
   className?: string;
@@ -217,7 +228,7 @@ interface MeshGroup {
   ids: number[];
 }
 
-function Buildings({ layout, active, onHover, onSelect, reducedMotion }: CitySceneProps) {
+function Buildings({ layout, active, onHover, onSelect, reducedMotion, frame }: CitySceneProps) {
   const { buildings } = layout;
   const invalidate = useThree((s) => s.invalidate);
   const gl = useThree((s) => s.gl);
@@ -262,7 +273,24 @@ function Buildings({ layout, active, onHover, onSelect, reducedMotion }: CitySce
     return { r: Math.hypot(maxX - minX, maxZ - minZ) / 2 || 1 };
   }, [layout]);
 
+  // Displayed height/footprint per building, tweened toward the target (layout or time-lapse frame).
+  const shown = useRef<{ h: Float32Array; w: Float32Array } | null>(null);
+  const tween = useRef<{ fromH: Float32Array; fromW: Float32Array; toH: Float32Array; toW: Float32Array; t: number } | null>(null);
+
+  const targets = (): { h: Float32Array; w: Float32Array } => {
+    const h = new Float32Array(buildings.length);
+    const w = new Float32Array(buildings.length);
+    for (const b of buildings) {
+      const on = !frame || frame.visible[b.id] === 1;
+      h[b.id] = on ? (frame ? frame.h[b.id]! : b.h) : 0;
+      w[b.id] = on ? (frame ? frame.w[b.id]! : b.w) : 0;
+    }
+    return { h, w };
+  };
+
   const writeMatrices = (progress: number) => {
+    const cur = shown.current;
+    if (!cur) return;
     const o = new Object3D();
     for (const [mesh, group] of [
       [solidRef.current, groups.solid],
@@ -273,28 +301,58 @@ function Buildings({ layout, active, onHover, onSelect, reducedMotion }: CitySce
         const b = buildings[id]!;
         const delay = (Math.hypot(b.x, b.z) / centre.r) * 0.45;
         const t = progress >= 1 ? 1 : easeOut(clamp01((progress - delay) / 0.55));
+        const w = Math.max(0.0001, cur.w[id]!);
         o.position.set(b.x, buildingBase(b), b.z);
-        o.scale.set(b.w, Math.max(0.001, b.h * t), b.w);
+        o.scale.set(w, Math.max(0.001, cur.h[id]! * t), w);
         o.updateMatrix();
         mesh.setMatrixAt(i, o.matrix);
       });
       mesh.instanceMatrix.needsUpdate = true;
-      if (progress >= 1) {
+      if (progress >= 1 && !tween.current) {
         mesh.computeBoundingBox();
         mesh.computeBoundingSphere();
       }
     }
   };
 
+  // New layout: snap to its targets. New frame: tween from what is on screen.
+  const shownFor = useRef<CityLayout["buildings"] | null>(null);
   useEffect(() => {
+    const next = targets();
+    if (shownFor.current !== buildings || !shown.current) {
+      shownFor.current = buildings;
+      shown.current = next;
+      tween.current = null;
+    } else if (reducedMotion) {
+      shown.current = next;
+      tween.current = null;
+    } else {
+      tween.current = { fromH: shown.current.h.slice(), fromW: shown.current.w.slice(), toH: next.h, toW: next.w, t: 0 };
+    }
     writeMatrices(rise.current);
     invalidate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groups, buildings]);
+  }, [groups, buildings, frame]);
 
   useFrame((_, delta) => {
-    if (rise.current >= 1) return;
-    rise.current = Math.min(1, rise.current + delta / 1.4);
+    let dirty = false;
+    if (rise.current < 1) {
+      rise.current = Math.min(1, rise.current + delta / 1.4);
+      dirty = true;
+    }
+    const tw = tween.current;
+    const cur = shown.current;
+    if (tw && cur) {
+      tw.t = Math.min(1, tw.t + delta / 0.6);
+      const k = easeInOut(tw.t);
+      for (let i = 0; i < cur.h.length; i++) {
+        cur.h[i] = tw.fromH[i]! + (tw.toH[i]! - tw.fromH[i]!) * k;
+        cur.w[i] = tw.fromW[i]! + (tw.toW[i]! - tw.fromW[i]!) * k;
+      }
+      if (tw.t >= 1) tween.current = null;
+      dirty = true;
+    }
+    if (!dirty) return;
     writeMatrices(rise.current);
     invalidate();
   });
