@@ -11,11 +11,12 @@ import { LoadingStages, type StageId } from "./loading-stages";
 type State =
   | { phase: "loading"; stage: StageId; detail?: string; skipped: Set<StageId> }
   | { phase: "error"; error: PublicError }
-  | { phase: "ready"; snapshot: RepoSnapshot; sceneReady: boolean };
+  | { phase: "ready"; snapshot: RepoSnapshot; permalink: string | null; sceneReady: boolean };
 
 const SERVER_STAGE: Record<string, StageId> = { connect: "connect", structure: "structure", contents: "contents", history: "history", complete: "plan" };
 
-export function CityLoader({ owner, repo }: { owner: string; repo: string }) {
+/** `sha` pins a saved snapshot (permanent link); without it the default branch is analyzed. */
+export function CityLoader({ owner, repo, sha }: { owner: string; repo: string; sha?: string }) {
   const [state, setState] = useState<State>({ phase: "loading", stage: "connect", skipped: new Set() });
   const [attempt, setAttempt] = useState(0);
   const abort = useRef<AbortController | null>(null);
@@ -26,7 +27,8 @@ export function CityLoader({ owner, repo }: { owner: string; repo: string }) {
     let finished = false;
     (async () => {
       try {
-        const res = await fetch(`/api/analyze?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`, { signal: ctrl.signal });
+        const query = new URLSearchParams({ owner, repo, ...(sha ? { sha } : {}) });
+        const res = await fetch(`/api/analyze?${query}`, { signal: ctrl.signal });
         if (!res.body) throw new Error("no body");
         const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
         let buffer = "";
@@ -61,7 +63,7 @@ export function CityLoader({ owner, repo }: { owner: string; repo: string }) {
               setState((s) => (s.phase === "loading" ? { ...s, stage: "plan", detail: `${snapshot.files.length} files` } : s));
               // Let the "planning" stage paint before the synchronous layout runs.
               await new Promise((r) => setTimeout(r, 30));
-              setState({ phase: "ready", snapshot, sceneReady: false });
+              setState({ phase: "ready", snapshot, permalink: event.permalink ?? null, sceneReady: false });
             }
           }
         }
@@ -72,7 +74,7 @@ export function CityLoader({ owner, repo }: { owner: string; repo: string }) {
       }
     })();
     return () => ctrl.abort();
-  }, [owner, repo, attempt]);
+  }, [owner, repo, sha, attempt]);
 
   const onSceneReady = useCallback(() => setState((s) => (s.phase === "ready" ? { ...s, sceneReady: true } : s)), []);
   const label = `${owner}/${repo}`;
@@ -80,7 +82,7 @@ export function CityLoader({ owner, repo }: { owner: string; repo: string }) {
   if (state.phase === "ready") {
     return (
       <>
-        <Explorer snapshot={state.snapshot} onSceneReady={onSceneReady} />
+        <Explorer snapshot={state.snapshot} permalink={state.permalink} pinned={Boolean(sha)} onSceneReady={onSceneReady} />
         {!state.sceneReady && <BuildOverlay label={label} />}
       </>
     );

@@ -78,3 +78,55 @@ test("invalid city routes 404", async ({ page }) => {
   expect(res?.status()).toBe(404);
   await expect(page.getByText("No city at this address")).toBeVisible();
 });
+
+test.describe("permanent links", () => {
+  test.skip(({ isMobile }) => isMobile, "desktop top bar");
+  const SHA = "7fcd8a743497f1895b999bb8c8d9c1241662a476";
+
+  test("a live city offers a permanent link to its exact snapshot", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.route("**/api/analyze?*", (route) =>
+      route.fulfill({
+        contentType: "application/x-ndjson",
+        body: ndjson([{ type: "stage", stage: "complete" }, { type: "result", snapshot: liveSnapshot(), permalink: `/city/acme/demo/${SHA}` }]),
+      }),
+    );
+    await page.goto("/city/acme/demo");
+    const button = page.getByRole("button", { name: "Copy a permanent link to this exact snapshot" });
+    await expect(button).toBeVisible();
+    await button.click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${new URL(page.url()).origin}/city/acme/demo/${SHA}`);
+    await expect(page.getByTestId("notices")).toContainText("Permanent link");
+  });
+
+  test("a pinned URL loads the saved snapshot and links to the latest city", async ({ page }) => {
+    let requested = "";
+    await page.route("**/api/analyze?*", (route) => {
+      requested = route.request().url();
+      return route.fulfill({
+        contentType: "application/x-ndjson",
+        body: ndjson([{ type: "result", snapshot: liveSnapshot(), permalink: `/city/acme/demo/${SHA}` }]),
+      });
+    });
+    await page.goto(`/city/acme/demo/${SHA}`);
+    await expect(page.getByTestId("notices")).toContainText("This link always shows this exact city");
+    expect(new URL(requested).searchParams.get("sha")).toBe(SHA);
+    await expect(page.getByRole("link", { name: "Latest →" })).toHaveAttribute("href", "/city/acme/demo");
+  });
+
+  test("an unknown snapshot explains itself and offers the current city", async ({ page }) => {
+    await page.route("**/api/analyze?*", (route) =>
+      route.fulfill({
+        contentType: "application/x-ndjson",
+        body: ndjson([{ type: "error", error: { code: "snapshot_not_found", message: "No saved snapshot of acme/demo at 7fcd8a7 exists." } }]),
+      }),
+    );
+    await page.goto(`/city/acme/demo/${SHA}`);
+    await expect(page.getByTestId("error-state")).toContainText("No saved snapshot at this commit");
+    await expect(page.getByRole("link", { name: "Build the current city" })).toHaveAttribute("href", "/city/acme/demo");
+  });
+
+  test("malformed snapshot URLs 404", async ({ page }) => {
+    expect((await page.goto("/city/acme/demo/not-a-sha"))?.status()).toBe(404);
+  });
+});

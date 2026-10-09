@@ -25,7 +25,7 @@ All screenshots were captured from the production build in headless Chromium (Sw
 - Search, language filters, directory focus, a label toggle, and a height metric toggle (lines vs. size).
 - **List view**: an accessible, sortable table with the same data as the 3D scene.
 - Mobile-specific model: full-bleed canvas, filter drawer, bottom-sheet details, touch orbit and pinch, and a reduced render budget.
-- Shareable URLs `/city/owner/repo`, with a copy-link action and per-route metadata.
+- Shareable URLs: `/city/owner/repo` shows the default branch as it is now, and `/city/owner/repo/<sha>` is a **permanent link** to a saved snapshot that never changes. Both have copy-link actions and per-route metadata.
 - Bundled real sample (`/sample`) that works offline. It is clearly labelled as a captured snapshot.
 
 ## How repository analysis works
@@ -37,7 +37,7 @@ All screenshots were captured from the production build in headless Chromium (Sw
 3. **Structure.** `GET /git/trees/{sha}?recursive=1` returns every path with its **exact blob size**. If GitHub truncates the tree, the UI says so.
 4. **Contents.** One streamed tarball of that SHA (`/tarball/{sha}`). The only redirect GitCity follows is to `codeload.github.com`, and credentials are not forwarded. It is gunzipped and read by a minimal streaming tar parser. Line counts and the complexity estimate come from the **real file contents**. Files over 1 MB, binary files, and anything left unread when the size or time budget runs out are marked unavailable, with the reason. This pass costs no per-file API requests.
 5. **History.** The last *N* commits on the branch (30 with a token, 5 without), each fetched once for its file list. This gives per-file commit counts and last-change dates **within that window**.
-6. Results are cached in memory per instance for 1 hour. Concurrent requests for the same repository share one analysis.
+6. **Storage.** Every analysis is saved as a snapshot in a private Vercel Blob store (see [Snapshot storage](#snapshot-storage)). For an hour, any server instance reuses it instead of calling GitHub again. Concurrent requests for the same repository on one instance share one analysis.
 
 Progress is streamed to the browser as NDJSON from `/api/analyze`. Every stage shown is a real pipeline stage; there are no simulated percentages. The browser then reports its own stages: layout, construction, and the first WebGL frame.
 
@@ -54,6 +54,17 @@ Defaults live in `src/lib/repo/exclusions.ts` (`DEFAULT_EXCLUSIONS`), and you ca
 - symlinks
 
 Excluded files are counted by reason and the count is shown.
+
+## Snapshot storage
+
+`src/lib/snapshot-store.ts` stores each analysis in a **private** Vercel Blob store. It holds only metadata about public repositories, never file contents.
+
+| Path | Purpose | Mutability |
+| --- | --- | --- |
+| `snapshots/{owner}/{repo}/{sha}.json` | Backs the permanent link `/city/owner/repo/{sha}` | Write-once: the first analysis of a commit is kept forever |
+| `latest/{owner}/{repo}.json` | Pointer to the newest analysis; serves as the shared cache | Overwritten on each new analysis |
+
+`/city/owner/repo` reuses the latest stored analysis for an hour, then re-analyzes the default branch. Requests with a SHA (`?sha=`) are served from storage only and never trigger an analysis. If storage is unavailable, the city still renders, but without a permanent link.
 
 ## Metric definitions
 
@@ -123,6 +134,7 @@ pnpm dev                       # http://localhost:3000
 | --- | --- | --- |
 | `GITHUB_TOKEN` | No (recommended) | Server-only token; no scopes needed for public repos. Raises the API limit from 60 to 5,000 requests per hour and widens the commit window from 5 to 30. It is never sent to the browser. |
 | `NEXT_PUBLIC_SITE_URL` | No | Absolute base URL for metadata (`metadataBase`). |
+| `BLOB_READ_WRITE_TOKEN` | No (recommended in production) | Vercel Blob token; set automatically when a Blob store is connected to the project. Enables saved snapshots, permanent links and the cross-instance cache. Without it, snapshots live in memory and disappear with the instance. |
 
 Each uncached analysis costs about 3 API requests, plus 1 tarball download and *N* + 1 history requests.
 
@@ -132,7 +144,7 @@ Each uncached analysis costs about 3 API requests, plus 1 tarball download and *
 - The server only contacts `api.github.com`, plus a redirect to `codeload.github.com` that it checks before following. Every path is built from validated segments with `encodeURIComponent`. A user-supplied URL is never fetched.
 - JSON responses are capped (5 MB, or 40 MB for trees) and validated with zod. Tarball reads are capped at 80 MB compressed and 400 MB inflated, with a 25 s budget. Each request has a 10 s timeout.
 - Repository code is only scanned as bytes. It is never executed.
-- `/api/analyze` has a per-IP rate limit (12 uncached analyses per 10 minutes per instance).
+- `/api/analyze` is rate-limited per IP: a per-instance limit on uncached analyses (12 per 10 minutes), plus a project-wide Vercel Firewall rule that is shared by all instances (see [Deployment](#deployment)).
 - Security headers are set in `next.config.ts`.
 
 ## Testing
@@ -144,10 +156,10 @@ Each uncached analysis costs about 3 API requests, plus 1 tarball download and *
 
 ## Known limitations
 
-- **Snapshots aren't stored.** `/city/owner/repo` rebuilds from the default branch each time; results are only cached in memory for an hour. The UI shows the analyzed SHA and says the city can change.
+- **Permanent links cover analyzed commits only.** A `/city/owner/repo/<sha>` link exists once GitCity has analyzed that commit as the repository's default-branch head. GitCity doesn't analyze arbitrary historical commits on demand.
 - **Commit activity is window-based**, by design, to bound API usage. GitHub returns at most 300 files per commit; when that limit is hit, the window is flagged as partial.
 - **Very large repositories.** More than 60,000 included source files are refused. Tarballs above the budget yield partial line counts, and this is disclosed. GitHub truncates trees above about 100k entries, and this is also disclosed.
-- **Infrastructure state is per instance.** The in-memory cache and rate limiter are not shared across serverless instances. Use a shared KV store for multi-instance deployments.
+- **The per-IP analysis limit is per instance.** Cross-instance abuse protection comes from the Vercel Firewall rule. Without it (e.g. on another host), add an edge rate limiter.
 - **Language detection** uses file names and extensions, not content.
 - **Complexity** is a lexical estimate, not a parsed metric.
 - **UI primitives.** The shadcn/ui registry wasn't reachable from the development sandbox, so `src/components/ui/` contains hand-written components in the same pattern (cva + tailwind-merge).
@@ -159,7 +171,8 @@ GitCity is a standard Next.js 16 app with Node.js route handlers, so it can be d
 
 1. Import the repository and set `GITHUB_TOKEN` (and optionally `NEXT_PUBLIC_SITE_URL`).
 2. Use the build command `pnpm build`. Uncached analyses take about 5–30 s, so allow at least 60 s for functions (`maxDuration = 60` is set on the route).
-3. Optional: put a shared KV cache in front of `analyzeRepository` for multi-instance caching and rate limiting.
+3. Create a private Vercel Blob store and connect it to the project; this sets `BLOB_READ_WRITE_TOKEN`.
+4. Add a Vercel Firewall rate-limit rule on `/api/analyze` (the production project uses 30 requests per 60 s per IP).
 
 GitCity has not been deployed.
 

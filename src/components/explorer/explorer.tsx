@@ -29,7 +29,19 @@ interface Selection {
   fileIndex: number | null;
 }
 
-export function Explorer({ snapshot, onSceneReady }: { snapshot: RepoSnapshot; onSceneReady?: () => void }) {
+export function Explorer({
+  snapshot,
+  onSceneReady,
+  permalink = null,
+  pinned = false,
+}: {
+  snapshot: RepoSnapshot;
+  onSceneReady?: () => void;
+  /** Permanent link to this stored snapshot, when it was saved. */
+  permalink?: string | null;
+  /** Viewing a saved snapshot at a fixed SHA. */
+  pinned?: boolean;
+}) {
   const isMobile = useIsMobile();
   const reducedMotion = useReducedMotion();
   const webgl = useWebGLSupport();
@@ -133,9 +145,16 @@ export function Explorer({ snapshot, onSceneReady }: { snapshot: RepoSnapshot; o
         `Bundled snapshot of ${snapshot.repo.owner}/${snapshot.repo.name} at ${shortSha(snapshot.revision.sha)}, captured ${formatDate(snapshot.analyzedAt)}. Not a live analysis.`,
       );
     } else {
-      out.push(
-        `Built from the default branch (${snapshot.revision.ref}) at ${shortSha(snapshot.revision.sha)}. Opening this link later rebuilds the city from the branch as it is then.`,
-      );
+      if (pinned) {
+        out.push(
+          `Saved snapshot of ${snapshot.revision.ref} at ${shortSha(snapshot.revision.sha)}, analyzed ${formatDate(snapshot.analyzedAt)}. This link always shows this exact city.`,
+        );
+      } else {
+        out.push(
+          `Built from the default branch (${snapshot.revision.ref}) at ${shortSha(snapshot.revision.sha)}. Opening this link later rebuilds the city from the branch as it is then.` +
+            (permalink ? " Use “Permanent link” to share this exact snapshot." : ""),
+        );
+      }
     }
     if (layout.aggregatedFiles > 0) {
       const blocks = layout.buildings.filter((b) => b.kind === "aggregate").length;
@@ -149,7 +168,7 @@ export function Explorer({ snapshot, onSceneReady }: { snapshot: RepoSnapshot; o
     out.push(...snapshot.notes);
     if (!cityAvailable) out.push(contextLost ? "The 3D view stopped (graphics context lost). Showing the list view." : "This browser cannot display WebGL. Showing the list view.");
     return out;
-  }, [snapshot, layout, files.length, budget, cityAvailable, contextLost]);
+  }, [snapshot, layout, files.length, budget, cityAvailable, contextLost, pinned, permalink]);
 
   const activityLabel = snapshot.activity
     ? `Commit counts and last-change dates cover the last ${snapshot.activity.commits} commits on ${snapshot.revision.ref}${snapshot.activity.oldest ? ` (since ${formatDate(snapshot.activity.oldest)})` : ""}.`
@@ -193,7 +212,7 @@ export function Explorer({ snapshot, onSceneReady }: { snapshot: RepoSnapshot; o
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-paper">
-      <TopBar snapshot={snapshot} stats={{ files: files.length, lines: totalLines, languages: langs.length }} />
+      <TopBar snapshot={snapshot} permalink={permalink} pinned={pinned} stats={{ files: files.length, lines: totalLines, languages: langs.length }} />
 
       <div className="flex min-h-0 flex-1">
         {/* Desktop sidebar */}
@@ -232,7 +251,12 @@ export function Explorer({ snapshot, onSceneReady }: { snapshot: RepoSnapshot; o
               <SlidersHorizontal className="size-4" aria-hidden /> Filters
               {filtered && <span className="size-1.5 rounded-full bg-accent" aria-label="(active)" />}
             </button>
-            <CopyLinkButton compactLabel className="h-9 w-9 md:hidden" />
+            <CopyLinkButton
+              compactLabel
+              className="h-9 w-9 md:hidden"
+              path={permalink ?? undefined}
+              ariaLabel={permalink && !pinned ? "Copy a permanent link to this exact snapshot" : "Copy link to this city"}
+            />
           </div>
 
           {/* Notices */}

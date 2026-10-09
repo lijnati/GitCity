@@ -8,6 +8,7 @@ Every codebase is a city. Next.js App Router + React Three Fiber app that turns 
 - `src/lib/city/` — pure, React-free city engine: `applyBudget` → `generateCity` (bottom-up shelf packing) → scale functions. Must stay deterministic (byte-wise path ordering, no randomness, no Date/Math.random).
 - `src/components/scene/` — R3F rendering (instanced meshes). `src/components/explorer/` — UI shell. `src/app/` — routes + `/api/analyze` NDJSON stream.
 - Shared contracts in `src/lib/types.ts`, validated by `src/lib/snapshot-schema.ts`.
+- `src/lib/snapshot-store.ts` — private Vercel Blob storage (memory fallback without `BLOB_READ_WRITE_TOKEN`). Snapshots per SHA are write-once: permanent links must never change.
 
 ## Truthfulness rules (non-negotiable)
 - Never invent metrics. Unknown values are `null` and rendered as explicit "unavailable" states.

@@ -12,6 +12,7 @@ const TITLES: Record<string, string> = {
   network: "Couldn’t reach GitHub",
   upstream: "GitHub returned an error",
   unavailable_for_legal_reasons: "Repository unavailable",
+  snapshot_not_found: "No saved snapshot at this commit",
 };
 
 export function ErrorState({ error, repo, onRetry }: { error: PublicError; repo: string; onRetry?: () => void }) {
@@ -32,6 +33,14 @@ export function ErrorState({ error, repo, onRetry }: { error: PublicError; repo:
           <button type="button" onClick={onRetry} className="h-10 rounded-sm bg-ink px-4 text-[14px] font-medium text-paper hover:bg-ink-2">
             Try again
           </button>
+        )}
+        {error.code === "snapshot_not_found" && (
+          <Link
+            href={`/city/${repo.split("/").map(encodeURIComponent).join("/")}`}
+            className="inline-flex h-10 items-center rounded-sm bg-ink px-4 text-[14px] font-medium text-paper hover:bg-ink-2"
+          >
+            Build the current city
+          </Link>
         )}
         <Link href="/sample" className="inline-flex h-10 items-center rounded-sm border border-line-strong px-4 text-[14px] font-medium hover:border-ink">
           Explore the sample city
