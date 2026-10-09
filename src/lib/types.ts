@@ -87,7 +87,8 @@ export type ErrorCode =
   | "upstream"
   | "unavailable_for_legal_reasons"
   | "too_many_requests"
-  | "snapshot_not_found";
+  | "snapshot_not_found"
+  | "timelapse_unavailable";
 
 export interface PublicError {
   code: ErrorCode;
@@ -100,4 +101,39 @@ export type AnalysisEvent =
   | { type: "stage"; stage: AnalysisStage; detail?: string }
   /** `permalink` is set when the snapshot is stored and can be linked to permanently. */
   | { type: "result"; snapshot: RepoSnapshot; permalink: string | null }
+  | { type: "error"; error: PublicError };
+
+/**
+ * A sampled history of the default branch, oldest frame first; the last frame
+ * is the head commit. File sizes are exact (Git tree API); frames carry no line
+ * counts, so the time-lapse sizes buildings by bytes.
+ */
+export interface TimelapseFrame {
+  sha: string;
+  date: string | null;
+  /** 1-based position in the commit list, newest = 1. */
+  index: number;
+  /** [index into `paths`, exact blob size in bytes] for every included file. */
+  files: [number, number][];
+  truncated: boolean;
+}
+
+export interface Timelapse {
+  schemaVersion: 1;
+  source: "live" | "sample";
+  owner: string;
+  name: string;
+  ref: string;
+  headSha: string;
+  /** Commits reachable from the head when sampled. */
+  totalCommits: number;
+  /** Union of included file paths across frames, sorted. */
+  paths: string[];
+  frames: TimelapseFrame[];
+  createdAt: string;
+}
+
+export type TimelapseEvent =
+  | { type: "progress"; done: number; total: number; label: string }
+  | { type: "result"; timelapse: Timelapse }
   | { type: "error"; error: PublicError };
