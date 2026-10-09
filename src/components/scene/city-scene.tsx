@@ -72,6 +72,14 @@ export default function CityScene(props: CitySceneProps) {
   const [interacted, setInteracted] = useState(false);
   const spinning = autoRotate && !interacted && !props.reducedMotion;
   const downAt = useRef<{ x: number; y: number } | null>(null);
+  // R3F forces a context loss when the canvas unmounts; only a loss while mounted is a real failure.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const labels = useMemo(() => labelCandidates(layout.blocks), [layout.blocks]);
   const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const extent = Math.max(layout.bounds.maxX - layout.bounds.minX, layout.bounds.maxZ - layout.bounds.minZ, 20);
@@ -95,7 +103,9 @@ export default function CityScene(props: CitySceneProps) {
         onCreated={({ gl }) => {
           gl.domElement.addEventListener("webglcontextlost", (e) => {
             e.preventDefault();
-            props.onContextLost?.();
+            setTimeout(() => {
+              if (mounted.current) props.onContextLost?.();
+            }, 0);
           });
           gl.domElement.setAttribute("aria-hidden", "true");
           requestAnimationFrame(() => requestAnimationFrame(() => props.onReady?.()));
