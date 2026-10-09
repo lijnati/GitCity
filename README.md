@@ -25,6 +25,7 @@ All screenshots were captured from the production build in headless Chromium (Sw
 - Search, language filters, directory focus, a label toggle, and a height metric toggle (lines vs. size).
 - **List view**: an accessible, sortable table with the same data as the 3D scene.
 - Mobile-specific model: full-bleed canvas, filter drawer, bottom-sheet details, touch orbit and pinch, and a reduced render budget.
+- **Link previews:** each city has its own 1200×630 preview image, an isometric drawing of its real layout with the repo's stats (see [Link previews](#link-previews)).
 - Shareable URLs: `/city/owner/repo` shows the default branch as it is now, and `/city/owner/repo/<sha>` is a **permanent link** to a saved snapshot that never changes. Both have copy-link actions and per-route metadata.
 - Bundled real sample (`/sample`) that works offline. It is clearly labelled as a captured snapshot.
 
@@ -65,6 +66,13 @@ Excluded files are counted by reason and the count is shown.
 | `latest/{owner}/{repo}.json` | Pointer to the newest analysis; serves as the shared cache | Overwritten on each new analysis |
 
 `/city/owner/repo` reuses the latest stored analysis for an hour, then re-analyzes the default branch. Requests with a SHA (`?sha=`) are served from storage only and never trigger an analysis. If storage is unavailable, the city still renders, but without a permanent link.
+
+## Link previews
+
+Every city route has an `opengraph-image`. `src/lib/og/iso-city.ts` draws the city's actual layout as a flat-shaded isometric SVG: same layout engine, heights and palette as the 3D scene, capped at 1,500 buildings. `src/lib/og/city-card.tsx` places it on a card with the repo name, revision and stats.
+
+- **Built from saved snapshots only.** Rendering a preview never triggers a GitHub analysis, since social crawlers would otherwise burn the rate limit. A repository that hasn't been analyzed yet gets a plain card with an empty lot marked "Not built yet".
+- **Caching:** a saved-snapshot preview is cached as immutable. The latest-city preview is cached for 1 hour at the edge.
 
 ## Metric definitions
 
@@ -163,6 +171,7 @@ Each uncached analysis costs about 3 API requests, plus 1 tarball download and *
 - **Language detection** uses file names and extensions, not content.
 - **Complexity** is a lexical estimate, not a parsed metric.
 - **UI primitives.** The shadcn/ui registry wasn't reachable from the development sandbox, so `src/components/ui/` contains hand-written components in the same pattern (cva + tailwind-merge).
+- **Link previews** show the latest analysis stored at the time a crawler fetches them. Use the permanent link to share an exact snapshot.
 - **Light theme only** for this release.
 
 ## Deployment
