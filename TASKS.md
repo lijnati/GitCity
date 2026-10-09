@@ -43,6 +43,6 @@
 ## Deferred / next
 - [x] Persisted snapshots (Vercel Blob) for permanent share links `/city/owner/repo/<sha>`
 - [x] Shared cache across instances (latest pointer, 1 h) + Vercel Firewall rate limit
-- [ ] Dynamic OG image per city
+- [x] Per-city link-preview images (isometric render of the real layout, snapshot-backed)
 - [ ] Dark theme
 - [ ] Web Worker layout for > 20k-file repositories

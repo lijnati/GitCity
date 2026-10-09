@@ -16,6 +16,7 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
     title: name,
     description: `Explore ${name} as an interactive 3D city: files are buildings, directories are neighborhoods.`,
     openGraph: { title: `${name} as a city — GitCity`, description: `Files are buildings, directories are neighborhoods. Explore ${name} in 3D.` },
+    twitter: { card: "summary_large_image", title: `${name} as a city — GitCity`, description: `Files are buildings, directories are neighborhoods. Explore ${name} in 3D.` },
   };
 }
 

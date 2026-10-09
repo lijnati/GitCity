@@ -1,28 +1,11 @@
 import { Color, CanvasTexture, RepeatWrapping, SRGBColorSpace } from "three";
-import { languageInfo } from "@/lib/repo/languages";
+import { buildingHex } from "@/lib/city/palette";
 import type { Building, CityLayout } from "@/lib/city/layout";
 
-export const PLINTH_HEIGHT = 0.16;
-export const GROUND_COLOR = "#d9d4c9";
-export const BACKGROUND = "#f3f1ec";
-const PLINTH_SHADES = ["#e9e5dc", "#efece5", "#f4f2ed", "#f8f6f2"];
-export const AGGREGATE_COLOR = "#b9b4aa";
-
-export function dirDepth(dir: string): number {
-  return dir ? dir.split("/").length : 0;
-}
-
-export function plinthColor(depth: number): string {
-  return PLINTH_SHADES[Math.min(depth - 1, PLINTH_SHADES.length - 1)]!;
-}
-
-export function buildingBase(b: Building): number {
-  return dirDepth(b.dir) * PLINTH_HEIGHT;
-}
+export { AGGREGATE_COLOR, BACKGROUND, buildingBase, dirDepth, GROUND_COLOR, PLINTH_HEIGHT, plinthColor } from "@/lib/city/palette";
 
 export function buildingColor(b: Building, out: Color): Color {
-  if (b.kind === "aggregate") return out.set(AGGREGATE_COLOR);
-  return out.set(languageInfo(b.language).color);
+  return out.set(buildingHex(b));
 }
 
 /** Diagonal hatching: the non-colour cue for "metric unavailable" and aggregates. */

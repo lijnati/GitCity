@@ -19,6 +19,7 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
     title: `${name} @ ${sha.slice(0, 7)}`,
     description: `A saved 3D city of ${name} at commit ${sha.slice(0, 7)}: files are buildings, directories are neighborhoods.`,
     openGraph: { title: `${name} @ ${sha.slice(0, 7)} as a city — GitCity`, description: `Explore a saved snapshot of ${name} in 3D.` },
+    twitter: { card: "summary_large_image", title: `${name} @ ${sha.slice(0, 7)} as a city — GitCity`, description: `Explore a saved snapshot of ${name} in 3D.` },
   };
 }
 
