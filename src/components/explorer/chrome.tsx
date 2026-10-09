@@ -10,31 +10,62 @@ import { Logo } from "@/components/logo";
 import { cn } from "@/lib/utils";
 import type { CameraApi } from "@/components/scene/city-scene";
 
-export function CopyLinkButton({ className, compactLabel = false }: { className?: string; compactLabel?: boolean }) {
+export function CopyLinkButton({
+  className,
+  compactLabel = false,
+  path,
+  label = "Copy link",
+  ariaLabel = "Copy link to this city",
+  title,
+}: {
+  className?: string;
+  compactLabel?: boolean;
+  /** Site-relative path to copy; defaults to the current URL. */
+  path?: string;
+  label?: string;
+  ariaLabel?: string;
+  title?: string;
+}) {
   const [copied, setCopied] = useState(false);
   return (
     <Button
       variant="outline"
       size={compactLabel ? "icon-sm" : "sm"}
       className={className}
-      aria-label="Copy link to this city"
+      aria-label={ariaLabel}
+      title={title}
       onClick={async () => {
+        const href = path ? new URL(path, window.location.origin).href : window.location.href;
         try {
-          await navigator.clipboard.writeText(window.location.href);
+          await navigator.clipboard.writeText(href);
           setCopied(true);
           setTimeout(() => setCopied(false), 1800);
         } catch {
-          window.prompt("Copy this link", window.location.href);
+          window.prompt("Copy this link", href);
         }
       }}
     >
       {copied ? <Check /> : <Copy />}
-      {!compactLabel && (copied ? "Copied" : "Copy link")}
+      {!compactLabel && (copied ? "Copied" : label)}
     </Button>
   );
 }
 
-export function TopBar({ snapshot, stats, children }: { snapshot: RepoSnapshot; stats: { files: number; lines: number; languages: number }; children?: React.ReactNode }) {
+export function TopBar({
+  snapshot,
+  stats,
+  permalink = null,
+  pinned = false,
+  children,
+}: {
+  snapshot: RepoSnapshot;
+  stats: { files: number; lines: number; languages: number };
+  /** Permanent link to this stored snapshot, if it was saved. */
+  permalink?: string | null;
+  /** True when viewing a pinned snapshot rather than the live default branch. */
+  pinned?: boolean;
+  children?: React.ReactNode;
+}) {
   const { repo, revision } = snapshot;
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-paper px-3 md:gap-5 md:px-4">
@@ -48,7 +79,7 @@ export function TopBar({ snapshot, stats, children }: { snapshot: RepoSnapshot; 
         <p className="truncate font-mono text-[11px] leading-tight text-faint">
           {revision.ref} @ {shortSha(revision.sha)}
           {revision.committedAt ? ` · ${formatDate(revision.committedAt)}` : ""}
-          {snapshot.source === "sample" ? " · bundled snapshot" : ""}
+          {snapshot.source === "sample" ? " · bundled snapshot" : pinned ? " · saved snapshot" : ""}
         </p>
       </div>
       <dl className="hidden items-baseline gap-5 lg:flex">
@@ -59,6 +90,25 @@ export function TopBar({ snapshot, stats, children }: { snapshot: RepoSnapshot; 
       </dl>
       <div className="flex items-center gap-1.5">
         {children}
+        {pinned ? (
+          <a
+            href={`/city/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`}
+            className="hidden h-8 items-center rounded-sm px-2.5 text-[13px] font-medium text-ink-2 hover:text-ink md:inline-flex"
+            title="Build the city from the default branch as it is now"
+          >
+            Latest →
+          </a>
+        ) : (
+          permalink && (
+            <CopyLinkButton
+              className="hidden md:inline-flex"
+              path={permalink}
+              label="Permanent link"
+              ariaLabel="Copy a permanent link to this exact snapshot"
+              title={`Always shows this city at ${shortSha(revision.sha)}`}
+            />
+          )
+        )}
         <CopyLinkButton className="hidden md:inline-flex" />
         <a
           href={repo.htmlUrl}

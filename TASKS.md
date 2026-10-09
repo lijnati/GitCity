@@ -41,8 +41,8 @@
 - [x] README
 
 ## Deferred / next
-- [ ] Persisted snapshots (KV/object storage) for permanent share links
-- [ ] Shared cache / rate limit for multi-instance deployments
+- [x] Persisted snapshots (Vercel Blob) for permanent share links `/city/owner/repo/<sha>`
+- [x] Shared cache across instances (latest pointer, 1 h) + Vercel Firewall rate limit
 - [ ] Dynamic OG image per city
 - [ ] Dark theme
 - [ ] Web Worker layout for > 20k-file repositories

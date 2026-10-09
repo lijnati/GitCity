@@ -86,7 +86,8 @@ export type ErrorCode =
   | "network"
   | "upstream"
   | "unavailable_for_legal_reasons"
-  | "too_many_requests";
+  | "too_many_requests"
+  | "snapshot_not_found";
 
 export interface PublicError {
   code: ErrorCode;
@@ -97,5 +98,6 @@ export interface PublicError {
 
 export type AnalysisEvent =
   | { type: "stage"; stage: AnalysisStage; detail?: string }
-  | { type: "result"; snapshot: RepoSnapshot }
+  /** `permalink` is set when the snapshot is stored and can be linked to permanently. */
+  | { type: "result"; snapshot: RepoSnapshot; permalink: string | null }
   | { type: "error"; error: PublicError };
