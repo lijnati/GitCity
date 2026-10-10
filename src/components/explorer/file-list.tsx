@@ -85,7 +85,7 @@ export function FileList({
             const f = files[i]!;
             const lang = languageInfo(f.language);
             return (
-              <tr key={f.path} className={cn("border-b border-line hover:bg-black/[0.03]", selectedFile === i && "bg-black/[0.06]")}>
+              <tr key={f.path} className={cn("border-b border-line hover:bg-ink/[0.03]", selectedFile === i && "bg-ink/[0.06]")}>
                 <td className="max-w-0 px-3 py-0">
                   <button type="button" onClick={() => onSelectFile(i)} className="block h-9 w-full truncate text-left font-mono text-[12.5px] text-ink hover:underline">
                     {f.path}

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { colorModes } from "@/lib/city/color-views";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { DetailContent } from "@/components/explorer/detail-panel";
@@ -76,6 +77,10 @@ describe("Sidebar", () => {
         heightMetric="lines"
         onHeightMetric={() => {}}
         linesAvailable={false}
+        colorModes={colorModes(snap)}
+        colorMode="language"
+        onColorMode={() => {}}
+        dependencies={{ available: false, reason: "No imports found.", on: false, onChange: () => {} }}
       />,
     );
     expect(screen.getByText("1 match")).toBeInTheDocument();

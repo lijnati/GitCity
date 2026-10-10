@@ -1,11 +1,11 @@
 import { Color, CanvasTexture, RepeatWrapping, SRGBColorSpace } from "three";
-import { buildingHex } from "@/lib/city/palette";
+import { buildingHex, PALETTES, type ScenePalette } from "@/lib/city/palette";
 import type { Building, CityLayout } from "@/lib/city/layout";
 
-export { AGGREGATE_COLOR, BACKGROUND, buildingBase, dirDepth, GROUND_COLOR, PLINTH_HEIGHT, plinthColor } from "@/lib/city/palette";
+export { buildingBase, dirDepth, PALETTES, PLINTH_HEIGHT, plinthColor, type ScenePalette } from "@/lib/city/palette";
 
-export function buildingColor(b: Building, out: Color): Color {
-  return out.set(buildingHex(b));
+export function buildingColor(b: Building, out: Color, palette: ScenePalette = PALETTES.light): Color {
+  return out.set(buildingHex(b, palette));
 }
 
 /** Diagonal hatching: the non-colour cue for "metric unavailable" and aggregates. */

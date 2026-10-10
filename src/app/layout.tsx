@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { THEME_SCRIPT } from "@/lib/theme-script";
 import { SITE } from "@/lib/site";
 import "./globals.css";
 
@@ -15,7 +16,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f3f1ec",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f3f1ec" },
+    { media: "(prefers-color-scheme: dark)", color: "#141413" },
+  ],
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -23,7 +27,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    // data-theme is set before hydration by THEME_SCRIPT.
+    <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-dvh antialiased">{children}</body>
     </html>
   );

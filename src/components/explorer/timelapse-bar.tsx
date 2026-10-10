@@ -25,7 +25,7 @@ export function TimelapseBar({
   onExit: () => void;
   className?: string;
 }) {
-  const btn = "grid size-10 shrink-0 place-items-center text-ink-2 hover:bg-black/[0.05] hover:text-ink disabled:opacity-35 md:size-9";
+  const btn = "grid size-10 shrink-0 place-items-center text-ink-2 hover:bg-ink/[0.05] hover:text-ink disabled:opacity-35 md:size-9";
   return (
     <div
       className={cn("pointer-events-auto flex w-full max-w-[720px] flex-col border border-line-strong bg-surface/95 shadow-[0_1px_0_rgba(0,0,0,0.04)]", className)}
