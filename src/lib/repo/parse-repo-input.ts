@@ -85,3 +85,21 @@ function truncate(s: string): string {
 export function isValidRepoId(owner: string, repo: string): boolean {
   return OWNER_RE.test(owner) && REPO_RE.test(repo) && repo !== "." && repo !== ".." && !RESERVED_OWNERS.has(owner.toLowerCase());
 }
+
+/**
+ * A branch, tag or commit SHA to analyze. Conservative subset of Git's ref rules:
+ * letters, digits, `.`, `_`, `-` and `/`; no `..`, no leading `-` or `/`, no
+ * trailing `/` or `.lock`. It is only ever used as one encoded URL path segment.
+ */
+export function isValidRef(ref: string): boolean {
+  return (
+    ref.length >= 1 &&
+    ref.length <= 200 &&
+    /^[A-Za-z0-9._/-]+$/.test(ref) &&
+    !ref.includes("..") &&
+    !ref.includes("//") &&
+    !/^[-/.]/.test(ref) &&
+    !ref.endsWith("/") &&
+    !ref.endsWith(".lock")
+  );
+}

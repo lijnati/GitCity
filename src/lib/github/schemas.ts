@@ -38,6 +38,7 @@ export const TreeResponse = z.object({
       path: z.string(),
       mode: z.string().optional(),
       type: z.string(),
+      sha: z.string().optional(),
       size: z.number().optional(),
     }),
   ),

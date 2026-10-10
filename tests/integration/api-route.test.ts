@@ -55,7 +55,7 @@ describe("/api/analyze with the snapshot store", () => {
   });
 
   it("re-analyzes when the stored analysis is stale", async () => {
-    await store.save(makeSnapshot(), Date.now() - 2 * 60 * 60 * 1000);
+    await store.save(makeSnapshot(), {}, Date.now() - 2 * 60 * 60 * 1000);
     const GET = await newInstance();
     analyze.mockImplementation(async () => makeSnapshot({ sha: "b".repeat(40) }));
     const { events } = await call(GET, "owner=acme&repo=demo");
@@ -73,6 +73,26 @@ describe("/api/analyze with the snapshot store", () => {
     const miss = await call(GET, `owner=acme&repo=demo&sha=${"f".repeat(40)}`);
     expect(error(miss.events)?.error.code).toBe("snapshot_not_found");
     expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it("analyzes a commit for comparison without moving the default-branch pointer", async () => {
+    const old = "c".repeat(40);
+    analyze.mockImplementation(async (_o: string, _r: string, opts: { ref?: string }) => makeSnapshot({ sha: opts.ref }));
+    const GET = await newInstance();
+    const { events } = await call(GET, `owner=acme&repo=demo&ref=${old}`);
+    expect(analyze).toHaveBeenCalledWith("acme", "demo", expect.objectContaining({ ref: old }));
+    expect(result(events)?.permalink).toBe(`/city/Acme/Demo/${old}`);
+    expect(await store.getLatest("acme", "demo")).toBeNull();
+    // Asking again is served from storage.
+    await call(await newInstance(), `owner=acme&repo=demo&ref=${old}`);
+    expect(analyze).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects malformed refs, and ref together with sha", async () => {
+    const GET = await newInstance();
+    expect((await call(GET, "owner=acme&repo=demo&ref=../x")).status).toBe(400);
+    expect((await call(GET, "owner=acme&repo=demo&ref=a%20b")).status).toBe(400);
+    expect((await call(GET, `owner=acme&repo=demo&ref=main&sha=${"a".repeat(40)}`)).status).toBe(400);
   });
 
   it("rejects malformed SHAs", async () => {
@@ -93,6 +113,7 @@ describe("/api/analyze with the snapshot store", () => {
       },
       getTimelapse: async () => null,
       saveTimelapse: async () => {},
+      listRecent: async () => [],
     };
     const GET = await newInstance(broken);
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});

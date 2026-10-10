@@ -15,19 +15,21 @@ import {
   Vector3,
 } from "three";
 import type { Block, Building, CityLayout } from "@/lib/city/layout";
+import { useTheme } from "@/components/theme";
 import {
-  BACKGROUND,
   buildingBase,
   buildingColor,
   createStripeTexture,
   DEFAULT_DIRECTION,
   fitBox,
   fitCity,
-  GROUND_COLOR,
   normalize,
+  PALETTES,
   PLINTH_HEIGHT,
   plinthColor,
+  type ScenePalette,
 } from "./scene-utils";
+import { DependencyArcs, type ArcSet } from "./dependency-arcs";
 
 /** The subset of three-stdlib OrbitControls the rig relies on. */
 interface OrbitControlsImpl {
@@ -69,6 +71,10 @@ export interface CitySceneProps {
    * building id). Buildings tween to it; positions never change.
    */
   frame?: FrameState | null;
+  /** Per-building colour override (hex, indexed by building id); null entries keep the language colour. */
+  colors?: readonly (string | null)[] | null;
+  /** Dependency arcs between buildings. */
+  arcs?: ArcSet | null;
   onReady?: () => void;
   onContextLost?: () => void;
   className?: string;
@@ -76,10 +82,11 @@ export interface CitySceneProps {
 
 const FOV = 32;
 const tmpColor = new Color();
-const faded = new Color("#ece9e2");
+const faded = new Color();
 
 export default function CityScene(props: CitySceneProps) {
   const { layout, lowPower = false, autoRotate = false, className } = props;
+  const palette = PALETTES[useTheme()];
   const [interacted, setInteracted] = useState(false);
   const spinning = autoRotate && !interacted && !props.reducedMotion;
   const downAt = useRef<{ x: number; y: number } | null>(null);
@@ -127,13 +134,14 @@ export default function CityScene(props: CitySceneProps) {
           props.onSelect?.(null);
         }}
       >
-        <color attach="background" args={[BACKGROUND]} />
-        <fog attach="fog" args={[BACKGROUND, extent * 3, extent * 8]} />
-        <Lights layout={layout} shadows={!lowPower} />
-        <Ground layout={layout} />
-        <Plinths blocks={layout.blocks} />
-        <Buildings {...props} />
-        <Selection layout={layout} selectedId={props.selectedId} />
+        <color attach="background" args={[palette.background]} />
+        <fog attach="fog" args={[palette.background, extent * 3, extent * 8]} />
+        <Lights layout={layout} shadows={!lowPower} palette={palette} />
+        <Ground layout={layout} palette={palette} />
+        <Plinths blocks={layout.blocks} palette={palette} />
+        <Buildings {...props} palette={palette} />
+        {props.arcs && <DependencyArcs layout={layout} arcs={props.arcs} palette={palette} />}
+        <Selection layout={layout} selectedId={props.selectedId} palette={palette} />
         <LabelUpdater candidates={labels} refs={labelRefs} enabled={props.showLabels} />
         <OrbitControls
           makeDefault
@@ -155,15 +163,15 @@ export default function CityScene(props: CitySceneProps) {
   );
 }
 
-function Lights({ layout, shadows }: { layout: CityLayout; shadows: boolean }) {
+function Lights({ layout, shadows, palette }: { layout: CityLayout; shadows: boolean; palette: ScenePalette }) {
   const { minX, maxX, minZ, maxZ, maxHeight } = layout.bounds;
   const half = Math.max(maxX - minX, maxZ - minZ) / 2 + 4;
   return (
     <>
-      <hemisphereLight args={["#ffffff", "#cfc8b8", 1.55]} />
+      <hemisphereLight args={[palette.sky, palette.bounce, palette.hemisphere]} />
       <directionalLight
         position={[-half * 0.55, half * 1.4 + maxHeight, half * 0.8]}
-        intensity={1.9}
+        intensity={palette.sun}
         castShadow={shadows}
         shadow-mapSize={[2048, 2048]}
         shadow-bias={-0.0004}
@@ -180,19 +188,19 @@ function Lights({ layout, shadows }: { layout: CityLayout; shadows: boolean }) {
   );
 }
 
-function Ground({ layout }: { layout: CityLayout }) {
+function Ground({ layout, palette }: { layout: CityLayout; palette: ScenePalette }) {
   const { minX, maxX, minZ, maxZ } = layout.bounds;
   const size = Math.max(maxX - minX, maxZ - minZ) * 8 + 200;
   return (
     <mesh rotation-x={-Math.PI / 2} position={[0, -0.001, 0]} receiveShadow>
       <planeGeometry args={[size, size]} />
-      <meshStandardMaterial color={GROUND_COLOR} roughness={1} />
+      <meshStandardMaterial color={palette.ground} roughness={1} />
     </mesh>
   );
 }
 
 /** Directory blocks: stacked low plinths, one instanced mesh. */
-function Plinths({ blocks }: { blocks: Block[] }) {
+function Plinths({ blocks, palette }: { blocks: Block[]; palette: ScenePalette }) {
   const ref = useRef<InstancedMesh>(null);
   const geometry = useMemo(() => {
     const g = new BoxGeometry(1, 1, 1);
@@ -209,12 +217,12 @@ function Plinths({ blocks }: { blocks: Block[] }) {
       m.makeScale(b.w, PLINTH_HEIGHT, b.d);
       m.setPosition(b.x, (b.depth - 1) * PLINTH_HEIGHT, b.z);
       mesh.setMatrixAt(i, m);
-      mesh.setColorAt(i, tmpColor.set(plinthColor(b.depth)));
+      mesh.setColorAt(i, tmpColor.set(plinthColor(b.depth, palette)));
     });
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.computeBoundingSphere();
-  }, [blocks]);
+  }, [blocks, palette]);
 
   if (blocks.length === 0) return null;
   return (
@@ -228,7 +236,7 @@ interface MeshGroup {
   ids: number[];
 }
 
-function Buildings({ layout, active, onHover, onSelect, reducedMotion, frame }: CitySceneProps) {
+function Buildings({ layout, active, onHover, onSelect, reducedMotion, frame, colors, palette }: CitySceneProps & { palette: ScenePalette }) {
   const { buildings } = layout;
   const invalidate = useThree((s) => s.invalidate);
   const gl = useThree((s) => s.gl);
@@ -357,8 +365,9 @@ function Buildings({ layout, active, onHover, onSelect, reducedMotion, frame }: 
     invalidate();
   });
 
-  // Colours: language colour, faded when filtered out, lifted when hovered.
+  // Colours: language colour (or the active colour view), faded when filtered out, lifted when hovered.
   useEffect(() => {
+    faded.set(palette.faded);
     for (const [mesh, group] of [
       [solidRef.current, groups.solid],
       [stripedRef.current, groups.striped],
@@ -366,7 +375,9 @@ function Buildings({ layout, active, onHover, onSelect, reducedMotion, frame }: 
       if (!mesh) continue;
       group.ids.forEach((id, i) => {
         const b = buildings[id]!;
-        buildingColor(b, tmpColor);
+        const override = colors?.[id];
+        if (override) tmpColor.set(override);
+        else buildingColor(b, tmpColor, palette);
         if (active && !active[id]) tmpColor.lerp(faded, 0.86);
         else if (id === hovered) tmpColor.offsetHSL(0, 0.04, 0.1);
         mesh.setColorAt(i, tmpColor);
@@ -374,7 +385,7 @@ function Buildings({ layout, active, onHover, onSelect, reducedMotion, frame }: 
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
     invalidate();
-  }, [groups, buildings, active, hovered, invalidate]);
+  }, [groups, buildings, active, hovered, invalidate, colors, palette]);
 
   useEffect(() => {
     gl.domElement.style.cursor = hovered === null ? "" : "pointer";
@@ -426,7 +437,7 @@ function Buildings({ layout, active, onHover, onSelect, reducedMotion, frame }: 
   );
 }
 
-function Selection({ layout, selectedId }: { layout: CityLayout; selectedId: number | null }) {
+function Selection({ layout, selectedId, palette }: { layout: CityLayout; selectedId: number | null; palette: ScenePalette }) {
   const edges = useMemo(() => {
     const box = new BoxGeometry(1, 1, 1);
     box.translate(0, 0.5, 0);
@@ -442,11 +453,11 @@ function Selection({ layout, selectedId }: { layout: CityLayout; selectedId: num
   return (
     <group>
       <lineSegments geometry={edges} position={[b.x, base, b.z]} scale={[b.w + pad, b.h + pad, b.w + pad]} raycast={() => null}>
-        <lineBasicMaterial color="#151515" />
+        <lineBasicMaterial color={palette.selection} />
       </lineSegments>
       <mesh position={[b.x, base + 0.02, b.z]} rotation-x={-Math.PI / 2} raycast={() => null}>
         <planeGeometry args={[b.w + 0.9, b.w + 0.9]} />
-        <meshBasicMaterial color="#d6401f" transparent opacity={0.85} />
+        <meshBasicMaterial color={palette.arcOut} transparent opacity={0.85} />
       </mesh>
     </group>
   );

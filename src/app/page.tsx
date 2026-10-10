@@ -3,6 +3,7 @@ import { GitHubMark } from "@/components/github-mark";
 import { RepoForm } from "@/components/landing/repo-form";
 import { LandingPreview } from "@/components/landing/preview";
 import { Logo } from "@/components/logo";
+import { ThemeToggle } from "@/components/theme";
 import { formatNumber } from "@/lib/format";
 import { sampleSnapshot } from "@/lib/sample";
 import { SITE } from "@/lib/site";
@@ -33,12 +34,16 @@ export default function Home() {
           <Link href="/sample" className="rounded-sm px-3 py-2 text-ink-2 hover:text-ink">
             Sample city
           </Link>
+          <Link href="/gallery" className="rounded-sm px-3 py-2 text-ink-2 hover:text-ink">
+            Gallery
+          </Link>
           <a href="#how-to-read" className="hidden rounded-sm px-3 py-2 text-ink-2 hover:text-ink sm:block">
             How to read it
           </a>
           <a href={SITE.source} className="inline-flex items-center gap-1.5 rounded-sm px-3 py-2 text-ink-2 hover:text-ink" target="_blank" rel="noopener noreferrer">
             <GitHubMark /> <span className="hidden sm:inline">Source</span>
           </a>
+          <ThemeToggle />
         </nav>
       </header>
 

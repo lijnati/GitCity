@@ -6,6 +6,7 @@ import { formatBytes, formatDate, formatNumber } from "@/lib/format";
 import { basename, dirname, languageInfo } from "@/lib/repo/languages";
 import type { LinesNote, RepoFile, RepoSnapshot } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { importFamily } from "@/lib/repo/imports";
 import { githubFileUrl, githubTreeUrl } from "./model";
 
 const LINES_NOTE: Record<LinesNote, string> = {
@@ -23,7 +24,7 @@ function Tag({ kind }: { kind: Provenance }) {
     <span
       className={
         "ml-2 inline-flex h-[18px] items-center rounded-xs border px-1 font-mono text-[10px] uppercase tracking-wide " +
-        (kind === "exact" ? "border-line-strong text-muted" : kind === "estimate" ? "border-dashed border-line-strong text-muted" : "border-transparent bg-black/[0.04] text-faint")
+        (kind === "exact" ? "border-line-strong text-muted" : kind === "estimate" ? "border-dashed border-line-strong text-muted" : "border-transparent bg-ink/[0.04] text-faint")
       }
     >
       {label}
@@ -50,6 +51,7 @@ export function DetailContent({
   onClose,
   onFocus,
   onSelectFile,
+  onOpenFile,
 }: {
   snapshot: RepoSnapshot;
   building: Building;
@@ -58,11 +60,14 @@ export function DetailContent({
   onClose: () => void;
   onFocus: () => void;
   onSelectFile: (fileIndex: number | null) => void;
+  /** Jump to another file (from the dependency lists). */
+  onOpenFile?: (fileIndex: number) => void;
 }) {
   if (building.kind === "aggregate" && fileIndex === null) {
     return <AggregateDetail snapshot={snapshot} building={building} onClose={onClose} onFocus={onFocus} onSelectFile={onSelectFile} />;
   }
-  const file = snapshot.files[building.kind === "file" ? building.fileIndex : fileIndex!]!;
+  const index = building.kind === "file" ? building.fileIndex : fileIndex!;
+  const file = snapshot.files[index]!;
   return (
     <>
       {building.kind === "aggregate" && (
@@ -71,6 +76,7 @@ export function DetailContent({
         </button>
       )}
       <FileDetail snapshot={snapshot} file={file} onClose={onClose} onFocus={onFocus} />
+      <Dependencies snapshot={snapshot} fileIndex={index} onOpenFile={onOpenFile} />
     </>
   );
 }
@@ -173,6 +179,55 @@ function FileDetail({ snapshot, file, onClose, onFocus }: { snapshot: RepoSnapsh
   );
 }
 
+function Dependencies({ snapshot, fileIndex, onOpenFile }: { snapshot: RepoSnapshot; fileIndex: number; onOpenFile?: (i: number) => void }) {
+  const graph = snapshot.imports;
+  const file = snapshot.files[fileIndex]!;
+  if (!graph || importFamily(file.language) === null) return null;
+  const out: number[] = [];
+  const inc: number[] = [];
+  for (const [a, b] of graph.edges) {
+    if (a === fileIndex) out.push(b);
+    else if (b === fileIndex) inc.push(a);
+  }
+  const list = (items: number[], label: string, swatch: string, testid: string) => (
+    <div className="mt-3" data-testid={testid}>
+      <h3 className="mb-1 flex items-center gap-2 text-[12px] font-medium text-muted">
+        <span className="block h-0.5 w-3" style={{ background: swatch }} aria-hidden />
+        {label} <span className="tabular font-mono text-faint">{formatNumber(items.length)}</span>
+      </h3>
+      {items.length === 0 ? (
+        <p className="px-1 text-[12px] text-faint">None inside this repository.</p>
+      ) : (
+        <ul className="max-h-40 overflow-auto pr-1">
+          {items.slice(0, 100).map((i) => (
+            <li key={i}>
+              <button
+                type="button"
+                onClick={() => onOpenFile?.(i)}
+                className="flex w-full items-baseline gap-2 rounded-xs px-1 py-1 text-left hover:bg-ink/[0.04]"
+                title={snapshot.files[i]!.path}
+              >
+                <span className="truncate font-mono text-[12px] text-ink-2">{basename(snapshot.files[i]!.path)}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-faint">{dirname(snapshot.files[i]!.path)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+  return (
+    <section className="mt-5 border-t border-line pt-4" aria-label="Dependencies">
+      <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+        Dependencies <Tag kind="estimate" />
+      </h2>
+      {list(out, "Imports", "var(--color-accent)", "deps-imports")}
+      {list(inc, "Imported by", "#2f6fb0", "deps-imported-by")}
+      <p className="mt-3 text-[11.5px] leading-snug text-faint">Resolved from import statements inside this repository; packages from outside it are not shown.</p>
+    </section>
+  );
+}
+
 function AggregateDetail({
   snapshot,
   building,
@@ -211,7 +266,7 @@ function AggregateDetail({
             <button
               type="button"
               onClick={() => onSelectFile?.(i)}
-              className="flex w-full items-baseline justify-between gap-3 rounded-xs px-1 py-1 text-left hover:bg-black/[0.04]"
+              className="flex w-full items-baseline justify-between gap-3 rounded-xs px-1 py-1 text-left hover:bg-ink/[0.04]"
             >
               <span className="truncate font-mono text-[12px] text-ink-2">{basename(f.path)}</span>
               <span className="tabular shrink-0 font-mono text-[11px] text-faint">{formatBytes(f.size)}</span>

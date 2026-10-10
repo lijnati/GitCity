@@ -1,7 +1,8 @@
 import { ZodError } from "zod";
-import { GitHubClient, GitHubError, toNetworkError } from "@/lib/github/client";
+import { GitHubClient, GitHubError, repoPath, toNetworkError } from "@/lib/github/client";
 import { analyzeRepository } from "@/lib/repo/analyze";
-import { isValidRepoId } from "@/lib/repo/parse-repo-input";
+import { isValidRef, isValidRepoId } from "@/lib/repo/parse-repo-input";
+import { CommitResponse } from "@/lib/github/schemas";
 import { LruCache } from "@/lib/cache";
 import { RateLimiter } from "@/lib/rate-limit";
 import { getSnapshotStore, permalinkFor, SHA_RE } from "@/lib/snapshot-store";
@@ -30,10 +31,11 @@ export async function GET(req: Request) {
   const owner = url.searchParams.get("owner") ?? "";
   const repo = url.searchParams.get("repo") ?? "";
   const sha = url.searchParams.get("sha");
-  if (!isValidRepoId(owner, repo) || (sha !== null && !SHA_RE.test(sha))) {
-    return Response.json({ type: "error", error: { code: "invalid_input", message: "Invalid repository." } }, { status: 400 });
+  const ref = url.searchParams.get("ref");
+  if (!isValidRepoId(owner, repo) || (sha !== null && !SHA_RE.test(sha)) || (ref !== null && (!isValidRef(ref) || sha !== null))) {
+    return Response.json({ type: "error", error: { code: "invalid_input", message: "Invalid repository or ref." } }, { status: 400 });
   }
-  const key = `${owner}/${repo}`.toLowerCase();
+  const key = `${owner}/${repo}`.toLowerCase() + (ref ? `@${ref}` : "");
   const store = getSnapshotStore();
 
   const encoder = new TextEncoder();
@@ -76,23 +78,45 @@ export async function GET(req: Request) {
         } else {
           pending = (async (): Promise<Cached> => {
             // Shared cache across instances: reuse a recent stored analysis.
-            const latest = await store.getLatest(owner, repo).catch((err) => {
-              console.error("[analyze] snapshot store read failed", err);
-              return null;
-            });
+            const latest = ref
+              ? null
+              : await store.getLatest(owner, repo).catch((err) => {
+                  console.error("[analyze] snapshot store read failed", err);
+                  return null;
+                });
             if (latest && Date.now() - latest.savedAt < FRESH_MS) {
               send({ type: "stage", stage: "complete", detail: "cached" });
               return { snapshot: latest.snapshot, permalink: permalinkFor(latest.snapshot) };
+            }
+            const client = new GitHubClient({ token: process.env.GITHUB_TOKEN });
+            // A specific ref: resolve it to a commit and reuse a stored analysis of that commit.
+            let target = ref;
+            if (ref) {
+              if (SHA_RE.test(ref)) target = ref;
+              else {
+                send({ type: "stage", stage: "connect", detail: `resolving ${ref}` });
+                target = CommitResponse.parse(await client.getJson(repoPath(owner, repo, "commits", ref))).sha;
+              }
+              const stored = await store.getSnapshot(owner, repo, target).catch(() => null);
+              if (stored) {
+                send({ type: "stage", stage: "complete", detail: "saved snapshot" });
+                return { snapshot: stored, permalink: permalinkFor(stored) };
+              }
             }
             const verdict = limiter.check(clientIp(req));
             if (!verdict.ok) {
               throw new GitHubError("too_many_requests", "Too many cities requested from your network. Please wait a few minutes.", 429, verdict.retryAt);
             }
-            const client = new GitHubClient({ token: process.env.GITHUB_TOKEN });
-            const snapshot = await analyzeRepository(owner, repo, { client, onStage: (stage, detail) => send({ type: "stage", stage, detail }) });
+            const snapshot = await analyzeRepository(owner, repo, {
+              client,
+              ...(target ? { ref: target } : {}),
+              onStage: (stage, detail) => send({ type: "stage", stage, detail }),
+            });
+            if (ref && !SHA_RE.test(ref)) snapshot.revision.ref = ref;
             let permalink: string | null = null;
             try {
-              await store.save(snapshot);
+              // Only default-branch analyses move the "latest" pointer (and the shared cache).
+              await store.save(snapshot, { latest: !ref });
               permalink = permalinkFor(snapshot);
             } catch (err) {
               // The city still works; it just can't be linked to permanently.

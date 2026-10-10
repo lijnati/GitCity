@@ -8,6 +8,7 @@ import type { RepoFile } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import type { HeightMetric } from "@/lib/city/scale";
+import type { ColorMode, ModeAvailability } from "@/lib/city/color-views";
 import type { DirNode, LanguageStat } from "./model";
 
 export interface SidebarProps {
@@ -28,6 +29,11 @@ export interface SidebarProps {
   heightMetric: HeightMetric;
   onHeightMetric: (m: HeightMetric) => void;
   linesAvailable: boolean;
+  colorModes: ModeAvailability[];
+  colorMode: ColorMode;
+  onColorMode: (m: ColorMode) => void;
+  /** Dependency arcs toggle; `reason` explains why it is unavailable. */
+  dependencies: { available: boolean; reason?: string; on: boolean; onChange: (v: boolean) => void; summary?: string };
 }
 
 function SectionTitle({ children, aside }: { children: React.ReactNode; aside?: React.ReactNode }) {
@@ -90,7 +96,7 @@ export const Sidebar = forwardRef<HTMLInputElement, SidebarProps>(function Sideb
                     <button
                       type="button"
                       onClick={() => props.onSelectFile(i)}
-                      className="group flex w-full items-center gap-2 rounded-xs px-1.5 py-1.5 text-left hover:bg-black/[0.045]"
+                      className="group flex w-full items-center gap-2 rounded-xs px-1.5 py-1.5 text-left hover:bg-ink/[0.045]"
                     >
                       <span className="size-2 shrink-0 rounded-[1px]" style={{ background: languageInfo(f.language).color }} aria-hidden />
                       <span className="min-w-0 flex-1">
@@ -129,7 +135,7 @@ export const Sidebar = forwardRef<HTMLInputElement, SidebarProps>(function Sideb
                     type="button"
                     aria-pressed={props.enabledLanguages.has(l.id)}
                     onClick={() => props.onToggleLanguage(l.id)}
-                    className={cn("flex min-h-8 w-full items-center gap-2.5 rounded-xs px-1.5 py-1 text-left text-[13px] hover:bg-black/[0.045]", !on && "text-faint")}
+                    className={cn("flex min-h-8 w-full items-center gap-2.5 rounded-xs px-1.5 py-1 text-left text-[13px] hover:bg-ink/[0.045]", !on && "text-faint")}
                   >
                     <span
                       className={cn("size-3 shrink-0 rounded-[1px] border", on ? "border-transparent" : "border-line-strong bg-transparent")}
@@ -186,7 +192,7 @@ export const Sidebar = forwardRef<HTMLInputElement, SidebarProps>(function Sideb
                   type="button"
                   aria-pressed={props.heightMetric === value}
                   onClick={() => props.onHeightMetric(value)}
-                  className={cn("h-8 rounded-xs text-[12.5px]", props.heightMetric === value ? "bg-ink text-paper" : "text-ink-2 hover:bg-black/[0.05]")}
+                  className={cn("h-8 rounded-xs text-[12.5px]", props.heightMetric === value ? "bg-ink text-paper" : "text-ink-2 hover:bg-ink/[0.05]")}
                 >
                   {label}
                 </button>
@@ -196,6 +202,38 @@ export const Sidebar = forwardRef<HTMLInputElement, SidebarProps>(function Sideb
               <p className="mt-2 text-[12px] leading-snug text-muted">Line counts are unavailable for some files; those are shown flat and striped.</p>
             )}
           </fieldset>
+          <fieldset className="mt-4">
+            <legend className="mb-1.5 text-[12px] text-muted">Building colour</legend>
+            <div className="grid grid-cols-2 gap-0.5 rounded-sm border border-line-strong p-0.5" data-testid="color-modes">
+              {props.colorModes.map((m) => (
+                <button
+                  key={m.mode}
+                  type="button"
+                  aria-pressed={props.colorMode === m.mode}
+                  disabled={!m.available}
+                  title={m.reason}
+                  onClick={() => props.onColorMode(m.mode)}
+                  className={cn(
+                    "h-8 rounded-xs text-[12.5px] disabled:cursor-not-allowed disabled:opacity-40",
+                    props.colorMode === m.mode ? "bg-ink text-paper" : "text-ink-2 hover:bg-ink/[0.05]",
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <div className="mt-4">
+            <Switch
+              checked={props.dependencies.on && props.dependencies.available}
+              onCheckedChange={props.dependencies.onChange}
+              label="Dependency arcs"
+              disabled={!props.dependencies.available}
+            />
+            <p className="mt-1 text-[12px] leading-snug text-muted" data-testid="deps-summary">
+              {props.dependencies.available ? props.dependencies.summary : props.dependencies.reason}
+            </p>
+          </div>
         </section>
       </div>
     </div>
@@ -210,7 +248,7 @@ function DirItem({ node, depth, focusDir, onFocusDir }: { node: DirNode; depth: 
   const selected = focusDir === node.path;
   return (
     <li role="treeitem" aria-expanded={hasChildren ? expanded : undefined} aria-selected={selected}>
-      <div className={cn("flex min-h-8 items-center rounded-xs pr-1.5 hover:bg-black/[0.045]", selected && "bg-black/[0.07]")} style={{ paddingLeft: depth * 12 }}>
+      <div className={cn("flex min-h-8 items-center rounded-xs pr-1.5 hover:bg-ink/[0.045]", selected && "bg-ink/[0.07]")} style={{ paddingLeft: depth * 12 }}>
         <button
           type="button"
           onClick={() => setOpen(!expanded)}

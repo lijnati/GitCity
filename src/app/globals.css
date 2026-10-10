@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* `dark:` follows the theme toggle (data-theme), not only the OS preference. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @theme {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -21,6 +24,22 @@
   --radius-md: 4px;
 
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* Dark theme: the same editorial system, inverted. Set by the inline script in layout.tsx. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-paper: #141413;
+  --color-surface: #1c1b1a;
+  --color-ink: #edebe6;
+  --color-ink-2: #cbc8c0;
+  --color-muted: #9d998f;
+  --color-faint: #7b776f;
+  --color-line: #2f2e2b;
+  --color-line-strong: #4a4843;
+  --color-accent: #ee6a45;
+  --color-accent-ink: #ff8f6c;
+  --color-ground: #24231f;
 }
 
 @layer base {

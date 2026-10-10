@@ -3,10 +3,12 @@
 import { Check, Copy, Expand, Minus, Plus, RotateCcw } from "lucide-react";
 import { GitHubMark } from "@/components/github-mark";
 import { useState } from "react";
-import { compact, formatDate, formatNumber, shortSha } from "@/lib/format";
+import { compact, formatDate, formatNumber, refLabel, shortSha } from "@/lib/format";
 import type { RepoSnapshot } from "@/lib/types";
+import type { ColorView } from "@/lib/city/color-views";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/logo";
+import { ThemeToggle } from "@/components/theme";
 import { cn } from "@/lib/utils";
 import type { CameraApi } from "@/components/scene/city-scene";
 
@@ -77,7 +79,7 @@ export function TopBar({
           <span className="font-semibold">{repo.name}</span>
         </h1>
         <p className="truncate font-mono text-[11px] leading-tight text-faint">
-          {revision.ref} @ {shortSha(revision.sha)}
+          {refLabel(revision.ref, revision.sha)}
           {revision.committedAt ? ` · ${formatDate(revision.committedAt)}` : ""}
           {snapshot.source === "sample" ? " · bundled snapshot" : pinned ? " · saved snapshot" : ""}
         </p>
@@ -118,6 +120,7 @@ export function TopBar({
         >
           <GitHubMark /> GitHub
         </a>
+        <ThemeToggle />
       </div>
     </header>
   );
@@ -133,7 +136,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function CameraControls({ camera, className }: { camera: React.RefObject<CameraApi | null>; className?: string }) {
-  const btn = "grid size-10 place-items-center text-ink-2 hover:bg-black/[0.05] hover:text-ink md:size-9";
+  const btn = "grid size-10 place-items-center text-ink-2 hover:bg-ink/[0.05] hover:text-ink md:size-9";
   return (
     <div className={cn("flex border border-line-strong bg-surface/95 shadow-[0_1px_0_rgba(0,0,0,0.04)] md:flex-row", className)} role="group" aria-label="Camera controls">
       <button type="button" className={btn} onClick={() => camera.current?.zoom(0.7)} aria-label="Zoom in" title="Zoom in (+)">
@@ -152,17 +155,48 @@ export function CameraControls({ camera, className }: { camera: React.RefObject<
   );
 }
 
-export function Legend({ heightMetric, className }: { heightMetric: "lines" | "size"; className?: string }) {
+export function Legend({
+  heightMetric,
+  colorView = null,
+  arcs = false,
+  className,
+}: {
+  heightMetric: "lines" | "size";
+  colorView?: ColorView | null;
+  arcs?: boolean;
+  className?: string;
+}) {
   return (
     <div className={cn("flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[12px] text-ink-2", className)} aria-label="Legend">
       <LegendItem glyph={<span className="block h-3.5 w-1.5 bg-ink-2" />}>Height = {heightMetric === "lines" ? "lines of code (log)" : "file size (log)"}</LegendItem>
       <LegendItem glyph={<span className="block size-2.5 border border-ink-2" />}>Footprint = file size (√)</LegendItem>
-      <LegendItem glyph={<span className="block size-2.5" style={{ background: "conic-gradient(#2f6fb0 0 25%, #b5532c 0 50%, #d9a521 0 75%, #3d7f6d 0)" }} />}>Colour = language</LegendItem>
+      {colorView ? (
+        <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1" data-testid="color-legend" title={colorView.note}>
+          <span>Colour = {colorView.title.toLowerCase()}</span>
+          {colorView.stops.map((s, i) => (
+            <span key={i} className="inline-flex items-center gap-1 whitespace-nowrap">
+              <span className="block size-2.5" style={{ background: s.color }} aria-hidden />
+              <span className="font-mono text-[11px] text-muted">{s.label}</span>
+            </span>
+          ))}
+          {colorView.unavailable && (
+            <span className="inline-flex items-center gap-1 whitespace-nowrap">
+              <span className="block size-2.5" style={{ background: colorView.unavailable.color }} aria-hidden />
+              <span className="font-mono text-[11px] text-muted">{colorView.unavailable.label}</span>
+            </span>
+          )}
+        </span>
+      ) : (
+        <LegendItem glyph={<span className="block size-2.5" style={{ background: "conic-gradient(#2f6fb0 0 25%, #b5532c 0 50%, #d9a521 0 75%, #3d7f6d 0)" }} />}>Colour = language</LegendItem>
+      )}
       <LegendItem
-        glyph={<span className="block size-2.5 border border-line-strong" style={{ background: "repeating-linear-gradient(45deg,#9c968b 0 2px,#fff 2px 4px)" }} />}
+        glyph={<span className="block size-2.5 border border-line-strong" style={{ background: "repeating-linear-gradient(45deg,#9c968b 0 2px,var(--color-surface) 2px 4px)" }} />}
       >
         Striped = unknown / aggregated
       </LegendItem>
+      {arcs && (
+        <LegendItem glyph={<span className="block h-1.5 w-3 rounded-t-full border-x border-t border-ink-2" />}>Arc = import, brightest at the imported file</LegendItem>
+      )}
     </div>
   );
 }

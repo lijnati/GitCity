@@ -14,6 +14,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DEFAULT_EXCLUSIONS, exclusionReason, hasGeneratedMarker } from "../src/lib/repo/exclusions";
+import { ImportCollector } from "../src/lib/repo/imports";
 import { detectLanguage, languageInfo } from "../src/lib/repo/languages";
 import { countLines, estimateComplexity, isBinary } from "../src/lib/repo/metrics";
 import { parseSnapshot } from "../src/lib/snapshot-schema";
@@ -39,11 +40,12 @@ const exclude = (reason: string, size: number) => {
 };
 
 const files = new Map<string, RepoFile>();
+const imports = new ImportCollector();
 let entries = 0;
 for (const line of git("ls-tree", "-r", "-l", "-z", "HEAD").toString().split("\0")) {
   if (!line) continue;
   const [meta, path] = line.split("\t") as [string, string];
-  const [mode, type, , sizeStr] = meta.split(/\s+/);
+  const [mode, type, blob, sizeStr] = meta.split(/\s+/);
   if (type !== "blob") continue;
   entries++;
   const size = Number(sizeStr);
@@ -58,7 +60,7 @@ for (const line of git("ls-tree", "-r", "-l", "-z", "HEAD").toString().split("\0
   }
   const body = git("show", `HEAD:${path}`);
   const bytes = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
-  const file: RepoFile = { path, size, language: detectLanguage(path), lines: null, complexity: null, commits: 0, lastModified: null };
+  const file: RepoFile = { path, size, language: detectLanguage(path), lines: null, complexity: null, commits: 0, lastModified: null, blob };
   if (size > 1_000_000) file.linesNote = "too-large";
   else if (isBinary(bytes)) file.linesNote = "binary";
   else {
@@ -69,6 +71,7 @@ for (const line of git("ls-tree", "-r", "-l", "-z", "HEAD").toString().split("\0
     }
     file.lines = countLines(bytes);
     file.complexity = estimateComplexity(text, languageInfo(file.language).family);
+    imports.consider(path, file.language, text);
   }
   files.set(path, file);
 }
@@ -106,10 +109,13 @@ const snapshot: RepoSnapshot = {
     oldest: commits.at(-1) ? new Date(commits.at(-1)!.date).toISOString() : null,
     partial: false,
   },
+  imports: imports.finish(list),
   notes: [],
 };
 
 parseSnapshot(snapshot);
 const out = resolve(import.meta.dirname, "../src/data/sample-city.json");
 writeFileSync(out, JSON.stringify(snapshot) + "\n");
-console.log(`wrote ${out}: ${list.length} files, ${excluded.count} excluded, ${commits.length} commits in window, sha ${sha}`);
+console.log(
+  `wrote ${out}: ${list.length} files, ${excluded.count} excluded, ${commits.length} commits in window, ${snapshot.imports!.edges.length} import links, sha ${sha}`,
+);

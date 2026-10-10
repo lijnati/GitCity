@@ -1,5 +1,5 @@
 import type { CityLayout } from "@/lib/city/layout";
-import { buildingBase, buildingHex, GROUND_COLOR, PLINTH_HEIGHT, plinthColor } from "@/lib/city/palette";
+import { buildingBase, buildingHex, PALETTES, PLINTH_HEIGHT, plinthColor, type ScenePalette } from "@/lib/city/palette";
 
 /**
  * Renders a city layout as a flat-shaded isometric SVG for preview images.
@@ -16,6 +16,7 @@ export interface IsoOptions {
   /** Vertical exaggeration so low cities still read as skylines. */
   heightScale?: number;
   padding?: number;
+  palette?: ScenePalette;
 }
 
 const COS = Math.cos(Math.PI / 6);
@@ -24,7 +25,7 @@ const SIN = 0.5;
 type P = [number, number];
 
 export function renderIsoCitySvg(layout: CityLayout, opts: IsoOptions): string {
-  const { width, height, heightScale = 1.25, padding = 16 } = opts;
+  const { width, height, heightScale = 1.25, padding = 16, palette = PALETTES.light } = opts;
   const project = (x: number, y: number, z: number): P => [(x - z) * COS, (x + z) * SIN - y * heightScale];
 
   // Projected bounds of every vertex that can be drawn.
@@ -61,7 +62,7 @@ export function renderIsoCitySvg(layout: CityLayout, opts: IsoOptions): string {
   // Ground under the whole city.
   const g = 2;
   out.push(
-    poly(GROUND_COLOR, [
+    poly(palette.ground, [
       pt(bounds.minX - g, 0, bounds.minZ - g),
       pt(bounds.maxX + g, 0, bounds.minZ - g),
       pt(bounds.maxX + g, 0, bounds.maxZ + g),
@@ -72,7 +73,7 @@ export function renderIsoCitySvg(layout: CityLayout, opts: IsoOptions): string {
   const blocks = [...layout.blocks].sort((a, b) => a.depth - b.depth);
   for (const b of blocks) {
     const y = b.depth * PLINTH_HEIGHT;
-    out.push(poly(plinthColor(b.depth), [pt(b.x, y, b.z), pt(b.x + b.w, y, b.z), pt(b.x + b.w, y, b.z + b.d), pt(b.x, y, b.z + b.d)]));
+    out.push(poly(plinthColor(b.depth, palette), [pt(b.x, y, b.z), pt(b.x + b.w, y, b.z), pt(b.x + b.w, y, b.z + b.d), pt(b.x, y, b.z + b.d)]));
   }
   // Buildings, far to near.
   const order = layout.buildings.map((b) => b.id).sort((a, b) => {
@@ -82,7 +83,7 @@ export function renderIsoCitySvg(layout: CityLayout, opts: IsoOptions): string {
   });
   for (const id of order) {
     const b = layout.buildings[id]!;
-    const hex = buildingHex(b);
+    const hex = buildingHex(b, palette);
     const x0 = b.x - b.w / 2;
     const x1 = b.x + b.w / 2;
     const z0 = b.z - b.w / 2;

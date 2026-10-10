@@ -27,6 +27,11 @@ All screenshots were captured from the production build in headless Chromium (Sw
 - Mobile-specific model: full-bleed canvas, filter drawer, bottom-sheet details, touch orbit and pinch, and a reduced render budget.
 - **Time-lapse:** scrub or play through a repository's history and watch its city grow in place (see [Time-lapse](#time-lapse)).
 - **Link previews:** each city has its own 1200×630 preview image, an isometric drawing of its real layout with the repo's stats (see [Link previews](#link-previews)).
+- **Colour views:** recolour the city by recent activity, last change or estimated complexity, with an explicit "unavailable" colour (see [Colour views](#colour-views)).
+- **Dependency layer:** import links between JS/TS and Python files drawn as arcs; select a file to see what it imports and what imports it (see [Dependency layer](#dependency-layer)).
+- **Compare two cities:** two commits, branches or tags of one repository on one shared plan, with added, removed and modified files highlighted (see [Compare](#compare)).
+- **Gallery** of recently built cities, **README image cards** (light and dark) and an **interactive iframe embed** (see [Gallery and embeds](#gallery-and-embeds)).
+- **Dark theme**, following the system setting until you pick one with the toggle.
 - Shareable URLs: `/city/owner/repo` shows the default branch as it is now, and `/city/owner/repo/<sha>` is a **permanent link** to a saved snapshot that never changes. Both have copy-link actions and per-route metadata.
 - Bundled real sample (`/sample`) that works offline. It is clearly labelled as a captured snapshot.
 
@@ -64,9 +69,10 @@ Excluded files are counted by reason and the count is shown.
 | Path | Purpose | Mutability |
 | --- | --- | --- |
 | `snapshots/{owner}/{repo}/{sha}.json` | Backs the permanent link `/city/owner/repo/{sha}` | Write-once: the first analysis of a commit is kept forever |
-| `latest/{owner}/{repo}.json` | Pointer to the newest analysis; serves as the shared cache | Overwritten on each new analysis |
+| `latest/{owner}/{repo}.json` | Pointer to the newest default-branch analysis (with a small summary for the gallery); serves as the shared cache | Overwritten on each new default-branch analysis |
+| `timelapse/{owner}/{repo}/{headSha}.json` | A sampled time-lapse ending at that commit | Write-once |
 
-`/city/owner/repo` reuses the latest stored analysis for an hour, then re-analyzes the default branch. Requests with a SHA (`?sha=`) are served from storage only and never trigger an analysis. If storage is unavailable, the city still renders, but without a permanent link.
+`/city/owner/repo` reuses the latest stored analysis for an hour, then re-analyzes the default branch. Requests with a SHA (`?sha=`) are served from storage only and never trigger an analysis. Requests with a `ref` (branch, tag or commit, used by Compare) resolve it to a commit, reuse a stored analysis of that commit if one exists, and otherwise analyze it and store it write-once — without moving the `latest` pointer. If storage is unavailable, the city still renders, but without a permanent link.
 
 ## Time-lapse
 
@@ -83,6 +89,62 @@ Excluded files are counted by reason and the count is shown.
 **Cost.** About `2 × frames + 3` GitHub API requests per new time-lapse; for comparison, a full city analysis needs about 9 without a token. Building one requires `GITHUB_TOKEN` on the server; without it, the UI explains that the time-lapse is unavailable. It is limited to 3 per IP per 10 minutes per instance. Results are stored write-once in Blob as `timelapse/{owner}/{repo}/{headSha}.json`, so a repeat costs nothing.
 
 **Sampling.** GitHub's commit list includes commits merged in from other branches; there is no first-parent option. The `/sample` time-lapse is bundled (built with `pnpm sample:timelapse` from a local clone using the same sampling and filtering), so it needs no API access.
+
+## Colour views
+
+![Colour by activity on the bundled sample](docs/screenshots/colour-activity.png)
+
+**Building colour** in the sidebar switches from language to one measured value, bucketed onto one sequential ramp (`src/lib/city/color-views.ts`):
+
+| View | Value | Buckets | Unavailable when |
+| --- | --- | --- | --- |
+| Activity | Commits touching the file in the analyzed window | 0 · 1 · 2–3 · 4–7 · 8+ | No commit window was analyzed |
+| Last change | Last commit touching the file in the window | "older" (not touched in the window: exact date unknown) + four equal time spans of the window | No commit window |
+| Complexity | Keyword-based decision points (an estimate) | ≤5 · 6–10 · 11–25 · 26–50 · 51+ | Unsupported language, or contents not read |
+
+A file without a value gets a neutral "unavailable" colour, never a guessed bucket. Aggregate blocks keep their neutral colour, since a mix of files has no single value. The legend and the notes say what the colour measures.
+
+## Dependency layer
+
+![Dependency arcs on the bundled sample](docs/screenshots/dependencies.png)
+
+Turn on **Dependency arcs** in the sidebar to draw every resolved import as an arc from the importing building to the imported one. Each arc brightens toward the imported file, so direction reads without arrowheads. Select a building to draw only its own arcs (orange: what it imports; blue: what imports it); the detail panel lists both, and each entry jumps to that file.
+
+![A file's imports and importers, dark theme](docs/screenshots/dependencies-selected-dark.png)
+
+**How imports are found** (`src/lib/repo/imports.ts`), during the same single tarball read that counts lines:
+
+- **JavaScript / TypeScript** (including Vue and Svelte files): `import … from`, `export … from`, side-effect `import "x"`, `require()` and dynamic `import()`, after stripping comments. Resolution follows relative paths with extension and `index` probing (and `.js` → `.ts` for ESM TypeScript), the nearest `tsconfig.json`/`jsconfig.json` `baseUrl` and `paths`, and packages of the same repository by their `package.json` name (workspaces).
+- **Python:** `import a.b` and `from … import …`, including relative imports, resolved from the file's package, the repository root, `src/`, and the directory above the file's outermost package.
+- Imports of packages outside the repository are counted, not drawn. Imports that point inside the repository but match no included file (for example a generated or excluded file) are counted as unresolved. Nothing is guessed, and the detail panel labels the result an **estimate**: extraction is lexical, not a full parse, and `tsconfig` `extends` chains are not followed.
+
+**Budget:** up to 4,000 building links are drawn at once on desktop (1,500 on mobile) in one draw call; selecting a building always shows all of its own. Snapshots stored before this layer existed say so and offer a rebuild instead of showing an empty layer.
+
+## Compare
+
+![Comparing two commits of a repository](docs/screenshots/compare-desktop.png)
+
+`/compare/owner/repo?base=<ref>&head=<ref>` (or **Compare** in a city's top bar) builds both cities and draws them on **one shared plan**: the union of their files, each slot sized for the larger version (`src/lib/city/compare.ts`). **Base**, **Changes** and **Head** switch between them and buildings change height and footprint in place. Added files are green, removed files red, modified files amber; **Fade unchanged** dims the rest. The side panel lists every change with its line delta, and a selected file shows its lines and size on both sides.
+
+- **Exact change detection:** analyses record each file's Git blob SHA, so "modified" means the content changed. Snapshots stored before blob SHAs were recorded fall back to size and line count, and the notes say so (edits that keep both identical are then missed).
+- Refs are validated (`isValidRef`) and only ever used as one encoded URL path segment.
+- Renamed files appear as removed and added.
+
+| Mobile |
+| --- |
+| ![Compare on mobile](docs/screenshots/compare-mobile.png) |
+
+## Gallery and embeds
+
+- **`/gallery`** lists the 48 most recently built default-branch cities, newest first, each with its card image, languages and stats, linking to its permanent snapshot. It is regenerated at most every 5 minutes. Set `GALLERY_EXCLUDE` (comma-separated `owner/repo` or `owner`) to hide entries, for example on request.
+- **README card:** `/api/card/owner/repo` returns a PNG of the latest stored city (`?sha=` pins a saved one, `?theme=dark` matches dark READMEs). The **Embed** menu gives a ready `<picture>` snippet that follows GitHub's light/dark theme. Cards are cached at the edge and never start an analysis.
+- **Interactive embed:** `/embed/owner/repo` (optionally `?sha=`) is a minimal orbit-and-zoom city for iframes, with a link back to the full explorer. Only `/embed/*` may be framed (`Content-Security-Policy: frame-ancestors *`); every other page sends `X-Frame-Options: DENY`.
+
+![Embed menu](docs/screenshots/embed-menu.png)
+
+## Dark theme
+
+The toggle in the header switches between light and dark; without a choice, GitCity follows the system setting. A tiny inline script applies the theme before first paint (no flash), and the 3D scene, preview cards and gallery switch palettes with it (`src/lib/city/palette.ts`). Language and data colours stay the same in both themes.
 
 ## Link previews
 
@@ -158,7 +220,8 @@ pnpm dev                       # http://localhost:3000
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `GITHUB_TOKEN` | No (recommended) | Server-only token; no scopes needed for public repos. Raises the API limit from 60 to 5,000 requests per hour and widens the commit window from 5 to 30. It is never sent to the browser. |
-| `NEXT_PUBLIC_SITE_URL` | No | Absolute base URL for metadata (`metadataBase`). |
+| `NEXT_PUBLIC_SITE_URL` | No | Absolute base URL for metadata (`metadataBase`). Falls back to the Vercel production URL. |
+| `GALLERY_EXCLUDE` | No | Comma-separated `owner/repo` or `owner` entries hidden from the gallery. |
 | `BLOB_READ_WRITE_TOKEN` | No (recommended in production) | Vercel Blob token; set automatically when a Blob store is connected to the project. Enables saved snapshots, permanent links and the cross-instance cache. Without it, snapshots live in memory and disappear with the instance. |
 
 Each uncached analysis costs about 3 API requests, plus 1 tarball download and *N* + 1 history requests.
@@ -170,18 +233,20 @@ Each uncached analysis costs about 3 API requests, plus 1 tarball download and *
 - JSON responses are capped (5 MB, or 40 MB for trees) and validated with zod. Tarball reads are capped at 80 MB compressed and 400 MB inflated, with a 25 s budget. Each request has a 10 s timeout.
 - Repository code is only scanned as bytes. It is never executed.
 - `/api/analyze` is rate-limited per IP: a per-instance limit on uncached analyses (12 per 10 minutes), plus a project-wide Vercel Firewall rule that is shared by all instances (see [Deployment](#deployment)).
-- Security headers are set in `next.config.ts`.
+- Security headers are set in `next.config.ts`. Only `/embed/*` may be framed by other sites.
+- The dependency layer reads imports as text; nothing from an analyzed repository is executed or fetched.
 
 ## Testing
 
 - **Unit:** input parsing (valid, invalid and malicious), exclusions, languages, line counting, complexity, tar parsing at many chunk sizes, scale functions, layout determinism, non-overlap, containment, stable file→building mapping, budget aggregation, cache and rate limiter.
 - **Integration (mocked GitHub):** a full analysis, plus these cases: 404 or private, private-flag refusal, empty repository, rate limits (403/429 with reset), 5xx, network failure, timeout, truncated tree, tarball failure, a redirect to a foreign host, oversized files, content budget, a rate-limited history call, the no-token window, file limits, and a 20k-file tree.
 - **Component:** detail-panel unavailable states, aggregates, sidebar search/filter, and the filter model.
-- **E2E (Playwright, desktop + Pixel 7):** landing, validation, URL normalisation with mocked progress, error states, 404, search → detail panel, clicking a building, language filter + list view + sorting, camera controls and shortcuts, directory focus, touch orbit + tap-to-select + bottom sheet, the filter drawer, no horizontal overflow, and zero console errors.
+- **Features:** import extraction and resolution (JS/TS forms, tsconfig paths, workspaces, Python relative/absolute), colour-view bucketing and unavailable states, compare classification (blob SHA and fallback) and shared-plan frames, building-level edges, ref validation, gallery listing, the `ref` analysis path (no `latest` move) and the README card route.
+- **E2E (Playwright, desktop + Pixel 7):** colour views, dependency arcs and the detail-panel import lists, theme toggle persistence, compare (mocked analyses, change list, Base/Head switching, invalid refs refused client-side), gallery, embed snippets, frame headers, and earlier: landing, validation, URL normalisation with mocked progress, error states, 404, search → detail panel, clicking a building, language filter + list view + sorting, camera controls and shortcuts, directory focus, touch orbit + tap-to-select + bottom sheet, the filter drawer, no horizontal overflow, and zero console errors.
 
 ## Known limitations
 
-- **Permanent links cover analyzed commits only.** A `/city/owner/repo/<sha>` link exists once GitCity has analyzed that commit as the repository's default-branch head. GitCity doesn't analyze arbitrary historical commits on demand.
+- **Permanent links cover analyzed commits only.** A `/city/owner/repo/<sha>` link exists once GitCity has analyzed that commit (as the default-branch head, or as one side of a comparison).
 - **Commit activity is window-based**, by design, to bound API usage. GitHub returns at most 300 files per commit; when that limit is hit, the window is flagged as partial.
 - **Very large repositories.** More than 60,000 included source files are refused. Tarballs above the budget yield partial line counts, and this is disclosed. GitHub truncates trees above about 100k entries, and this is also disclosed.
 - **The per-IP analysis limit is per instance.** Cross-instance abuse protection comes from the Vercel Firewall rule. Without it (e.g. on another host), add an edge rate limiter.
@@ -189,18 +254,20 @@ Each uncached analysis costs about 3 API requests, plus 1 tarball download and *
 - **Complexity** is a lexical estimate, not a parsed metric.
 - **UI primitives.** The shadcn/ui registry wasn't reachable from the development sandbox, so `src/components/ui/` contains hand-written components in the same pattern (cva + tailwind-merge).
 - **Link previews** show the latest analysis stored at the time a crawler fetches them. Use the permanent link to share an exact snapshot.
-- **Light theme only** for this release.
+- **Dependency arcs** cover JavaScript/TypeScript and Python only (Rust, Go and others are next). Extraction is lexical; `tsconfig` `extends` and bundler-specific aliases are not followed.
+- **Compare and Embed menus** are in the desktop top bar; on phones, open `/compare/owner/repo` directly.
+- **The gallery is unmoderated:** it lists any public repository someone built. Use `GALLERY_EXCLUDE` to hide one.
 
 ## Deployment
 
 GitCity is a standard Next.js 16 app with Node.js route handlers, so it can be deployed to Vercel or any Node host:
 
-1. Import the repository and set `GITHUB_TOKEN` (and optionally `NEXT_PUBLIC_SITE_URL`).
+1. Import the repository and set `GITHUB_TOKEN` (and `NEXT_PUBLIC_SITE_URL` to the public domain).
 2. Use the build command `pnpm build`. Uncached analyses take about 5–30 s, so allow at least 60 s for functions (`maxDuration = 60` is set on the route).
 3. Create a private Vercel Blob store and connect it to the project; this sets `BLOB_READ_WRITE_TOKEN`.
-4. Add a Vercel Firewall rate-limit rule on `/api/analyze` (the production project uses 30 requests per 60 s per IP).
+4. Add a Vercel Firewall rate-limit rule on `/api/analyze` and `/api/timelapse` (for example 30 requests per 60 s per IP).
 
-GitCity has not been deployed.
+Production: <https://gitcity.xylolabs.space>.
 
 ## Project structure
 

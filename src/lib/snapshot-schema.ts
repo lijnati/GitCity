@@ -12,6 +12,7 @@ export const RepoFileSchema = z.object({
   complexity: z.number().int().nonnegative().nullable(),
   commits: z.number().int().nonnegative().nullable(),
   lastModified: iso.nullable(),
+  blob: z.string().regex(/^[0-9a-f]{40}$/).optional(),
 });
 
 export const SnapshotSchema = z.object({
@@ -34,11 +35,23 @@ export const SnapshotSchema = z.object({
   activity: z
     .object({ commits: z.number().int().nonnegative(), newest: iso.nullable(), oldest: iso.nullable(), partial: z.boolean() })
     .nullable(),
+  imports: z
+    .object({
+      edges: z.array(z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()])).max(100_000),
+      scanned: z.number().int().nonnegative(),
+      resolved: z.number().int().nonnegative(),
+      external: z.number().int().nonnegative(),
+      unresolved: z.number().int().nonnegative(),
+      truncated: z.boolean(),
+    })
+    .optional(),
   notes: z.array(z.string().max(1000)).max(50),
 });
 
 export function parseSnapshot(data: unknown): RepoSnapshot {
-  return SnapshotSchema.parse(data) as RepoSnapshot;
+  const s = SnapshotSchema.parse(data) as RepoSnapshot;
+  if (s.imports) for (const [a, b] of s.imports.edges) if (a >= s.files.length || b >= s.files.length) throw new Error("Import edge out of range");
+  return s;
 }
 
 export const TimelapseSchema = z.object({

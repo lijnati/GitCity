@@ -30,3 +30,16 @@ export function shortSha(sha: string): string {
 export function compact(n: number): string {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
 }
+
+/** Month, day and UTC time, for spans too short for whole dates. */
+export function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }) + " UTC";
+}
+
+/** "main @ 1a2b3c4", or just the short SHA when the ref is the commit itself. */
+export function refLabel(ref: string, sha: string): string {
+  return ref === sha ? shortSha(sha) : `${ref} @ ${shortSha(sha)}`;
+}

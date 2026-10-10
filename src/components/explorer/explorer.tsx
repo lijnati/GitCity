@@ -19,8 +19,11 @@ import { useIsMobile, useReducedMotion, useWebGLSupport } from "./hooks";
 import { activeBuildings, directoryTree, hasFilters, languageStats, matchFiles, type Filters } from "./model";
 import { Sidebar } from "./sidebar";
 import { TimelapseBar } from "./timelapse-bar";
+import { CompareMenu, EmbedMenu } from "./top-menus";
 import { useTimelapse } from "./use-timelapse";
 import { buildTimelapseCity } from "@/lib/city/timelapse";
+import { colorModes, colorView, type ColorMode } from "@/lib/city/color-views";
+import { buildingEdges } from "@/lib/city/dependencies";
 
 const CityScene = dynamic(() => import("@/components/scene/city-scene"), {
   ssr: false,
@@ -65,6 +68,8 @@ export function Explorer({
   const [timelapseOn, setTimelapseOn] = useState(false);
   const [frameIndex, setFrameIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [colorMode, setColorMode] = useState<ColorMode>("language");
+  const [showDeps, setShowDeps] = useState(false);
 
   const camera = useRef<CameraApi | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -80,6 +85,13 @@ export function Explorer({
   const active = useMemo(() => (filtered ? activeBuildings(layout, fileMask) : null), [filtered, layout, fileMask]);
   const totalLines = useMemo(() => files.reduce((s, f) => s + (f.lines ?? 0), 0), [files]);
 
+  const modes = useMemo(() => colorModes(snapshot), [snapshot]);
+  const effectiveColorMode = modes.find((m) => m.mode === colorMode)?.available ? colorMode : "language";
+  const colors = useMemo(() => colorView(effectiveColorMode, layout, snapshot), [effectiveColorMode, layout, snapshot]);
+  const graph = snapshot.imports;
+  const depEdges = useMemo(() => (graph ? buildingEdges(layout, graph) : null), [layout, graph]);
+  const depsAvailable = Boolean(depEdges && depEdges.length > 0);
+
   const effectiveView = cityAvailable ? view : "list";
   const selectedBuilding = selection ? layout.buildings[selection.buildingId] : undefined;
 
@@ -92,6 +104,11 @@ export function Explorer({
   const sceneLayout = tlActive ? tlCity.layout : layout;
   const tlMask = useMemo(() => (tlCity && filtered ? matchFiles(tlCity.files, filters) : null), [tlCity, filtered, filters]);
   const sceneActive = tlActive ? (tlMask ? activeBuildings(tlCity.layout, tlMask) : null) : active;
+  const arcsOn = showDeps && depsAvailable && !tlActive;
+  const arcs = useMemo(
+    () => (arcsOn ? { edges: depEdges!, focus: selection?.buildingId ?? null, active, limit: isMobile ? 1500 : 4000 } : null),
+    [arcsOn, depEdges, selection, active, isMobile],
+  );
 
   // Start each loaded time-lapse from the first frame; autoplay unless motion is reduced.
   const [startedFor, setStartedFor] = useState<unknown>(null);
@@ -245,10 +262,19 @@ export function Explorer({
           (truncated ? ` ${truncated} frame${truncated === 1 ? " was" : "s were"} truncated by GitHub.` : ""),
       );
     }
+    if (arcsOn && graph && depEdges) {
+      const limit = isMobile ? 1500 : 4000;
+      out.push(
+        `Dependency arcs: ${formatNumber(graph.edges.length)} import links between ${formatNumber(graph.scanned)} JS/TS and Python files, resolved inside this repository (${formatNumber(graph.external)} imports of outside packages are not drawn${graph.unresolved ? `; ${formatNumber(graph.unresolved)} could not be resolved` : ""}).` +
+          (depEdges.length > limit && !selection ? ` Showing the first ${formatNumber(limit)} of ${formatNumber(depEdges.length)} building links; select a building to see all of its own.` : "") +
+          (graph.truncated ? " The edge list reached its cap." : ""),
+      );
+    }
+    if (colors && !tlActive) out.push(`Colour: ${colors.note}`);
     out.push(...snapshot.notes);
     if (!cityAvailable) out.push(contextLost ? "The 3D view stopped (graphics context lost). Showing the list view." : "This browser cannot display WebGL. Showing the list view.");
     return out;
-  }, [snapshot, layout, files.length, budget, cityAvailable, contextLost, pinned, permalink, tlActive, timelapse]);
+  }, [snapshot, layout, files.length, budget, cityAvailable, contextLost, pinned, permalink, tlActive, timelapse, arcsOn, graph, depEdges, isMobile, selection, colors]);
 
   const activityLabel = snapshot.activity
     ? `Commit counts and last-change dates cover the last ${snapshot.activity.commits} commits on ${snapshot.revision.ref}${snapshot.activity.oldest ? ` (since ${formatDate(snapshot.activity.oldest)})` : ""}.`
@@ -274,6 +300,18 @@ export function Explorer({
       heightMetric={heightMetric}
       onHeightMetric={setHeightMetric}
       linesAvailable={snapshot.lines.counted === snapshot.lines.total}
+      colorModes={modes}
+      colorMode={effectiveColorMode}
+      onColorMode={setColorMode}
+      dependencies={{
+        available: depsAvailable,
+        reason: !graph
+          ? "Not available for this snapshot: it was analyzed before GitCity read imports. Rebuild the city to add them."
+          : "No imports between JS/TS or Python files of this repository were found.",
+        on: showDeps,
+        onChange: setShowDeps,
+        summary: graph ? `${formatNumber(graph.edges.length)} import links between files (JS/TS, Python).` : undefined,
+      }}
     />
   );
 
@@ -285,6 +323,7 @@ export function Explorer({
       onClose={() => setSelection(null)}
       onFocus={() => camera.current?.focusBuilding(selectedBuilding.id)}
       onSelectFile={(i) => setSelection((s) => (s ? { ...s, fileIndex: i } : s))}
+      onOpenFile={selectFile}
     />
   );
 
@@ -292,7 +331,12 @@ export function Explorer({
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-paper">
-      <TopBar snapshot={snapshot} permalink={permalink} pinned={pinned} stats={{ files: files.length, lines: totalLines, languages: langs.length }} />
+      <TopBar snapshot={snapshot} permalink={permalink} pinned={pinned} stats={{ files: files.length, lines: totalLines, languages: langs.length }}>
+        <div className="hidden items-center gap-1.5 md:flex">
+          <CompareMenu snapshot={snapshot} />
+          {snapshot.source === "live" && <EmbedMenu snapshot={snapshot} pinned={pinned} />}
+        </div>
+      </TopBar>
 
       <div className="flex min-h-0 flex-1">
         {/* Desktop sidebar */}
@@ -309,7 +353,7 @@ export function Explorer({
                 aria-pressed={effectiveView === "city"}
                 disabled={!cityAvailable}
                 onClick={() => setView("city")}
-                className={cn("flex h-9 items-center gap-1.5 px-3 text-[13px]", effectiveView === "city" ? "bg-ink text-paper" : "text-ink-2 hover:bg-black/[0.05] disabled:opacity-40")}
+                className={cn("flex h-9 items-center gap-1.5 px-3 text-[13px]", effectiveView === "city" ? "bg-ink text-paper" : "text-ink-2 hover:bg-ink/[0.05] disabled:opacity-40")}
               >
                 <Box className="size-4" aria-hidden /> City
               </button>
@@ -317,7 +361,7 @@ export function Explorer({
                 type="button"
                 aria-pressed={effectiveView === "list"}
                 onClick={() => setView("list")}
-                className={cn("flex h-9 items-center gap-1.5 border-l border-line px-3 text-[13px]", effectiveView === "list" ? "bg-ink text-paper" : "text-ink-2 hover:bg-black/[0.05]")}
+                className={cn("flex h-9 items-center gap-1.5 border-l border-line px-3 text-[13px]", effectiveView === "list" ? "bg-ink text-paper" : "text-ink-2 hover:bg-ink/[0.05]")}
               >
                 <List className="size-4" aria-hidden /> List
               </button>
@@ -329,7 +373,7 @@ export function Explorer({
               onClick={() => (timelapseOn ? exitTimelapse() : startTimelapse())}
               className={cn(
                 "flex h-9 items-center gap-1.5 border border-line-strong px-2.5 text-[13px] disabled:opacity-40 md:px-3",
-                timelapseOn ? "bg-ink text-paper" : "bg-surface text-ink-2 hover:bg-black/[0.05]",
+                timelapseOn ? "bg-ink text-paper" : "bg-surface text-ink-2 hover:bg-ink/[0.05]",
               )}
               title="Watch the city grow through its history"
             >
@@ -393,6 +437,8 @@ export function Explorer({
               layout={sceneLayout}
               active={sceneActive}
               frame={tlFrame}
+              colors={tlActive ? null : (colors?.colors ?? null)}
+              arcs={arcs}
               selectedId={tlActive ? null : (selection?.buildingId ?? null)}
               showLabels={showLabels}
               cameraRef={camera}
@@ -458,7 +504,7 @@ export function Explorer({
                 />
               ) : (
               <div className="pointer-events-auto hidden border border-line-strong bg-surface/95 px-3 py-2 lg:block">
-                <Legend heightMetric={heightMetric} />
+                <Legend heightMetric={heightMetric} colorView={colors} arcs={arcsOn} />
                 <p className="mt-1 text-[11.5px] text-muted">
                   Drag to orbit · right-drag to pan · scroll to zoom · click a building · <Kbd>/</Kbd> search <Kbd>F</Kbd> fit <Kbd>L</Kbd> labels
                 </p>

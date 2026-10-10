@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GitHubClient, GitHubError } from "@/lib/github/client";
 import { analyzeRepository } from "@/lib/repo/analyze";
-import { json, mockGitHub, SHA } from "../fixtures/mock-github";
+import { gitBlobSha, json, mockGitHub, SHA } from "../fixtures/mock-github";
 
 const sampleFiles = [
   { path: "README.md", content: "# Demo\n\nHello\n" },
@@ -66,6 +66,39 @@ describe("analyzeRepository", () => {
     expect(stages).toEqual(["connect", "structure", "contents", "history", "complete"]);
     // Only fixed GitHub hosts are contacted.
     expect(calls.every((c) => c.startsWith("api.github.com/") || c.startsWith("codeload.github.com/"))).toBe(true);
+  });
+
+  it("records blob SHAs and resolves imports between included files", async () => {
+    const files = [
+      { path: "src/app.ts", content: 'import { util } from "./util";\nimport React from "react";\nimport gen from "./gen";\n' },
+      { path: "src/util.ts", content: "export const util = 1;\n" },
+      { path: "src/gen.ts", content: "// @generated\nexport default 1;\n" },
+      { path: "py/pkg/__init__.py", content: "" },
+      { path: "py/pkg/main.py", content: "from . import helpers\nimport os\n" },
+      { path: "py/pkg/helpers.py", content: "X = 1\n" },
+    ];
+    const { fetchImpl } = mockGitHub({ files });
+    const snap = await analyze(fetchImpl).run();
+    const idx = (p: string) => snap.files.findIndex((f) => f.path === p);
+    expect(snap.files[idx("src/util.ts")]!.blob).toBe(gitBlobSha(files[1]!.content));
+    expect(snap.imports!.edges).toEqual(
+      [
+        [idx("py/pkg/main.py"), idx("py/pkg/helpers.py")],
+        [idx("src/app.ts"), idx("src/util.ts")],
+      ].sort((a, b) => a[0]! - b[0]!),
+    );
+    // "./gen" points at a generated (excluded) file: unresolved, not invented.
+    expect(snap.imports).toMatchObject({ external: 2, unresolved: 1, truncated: false });
+  });
+
+  it("analyzes a specific ref and labels the revision with it", async () => {
+    const { fetchImpl, calls } = mockGitHub({ files: sampleFiles.slice(0, 2) }, {
+      "/repos/acme/demo/commits/v1.0.0": () => json({ sha: SHA, commit: { committer: { date: "2025-06-01T00:00:00Z" } } }),
+    });
+    const client = new GitHubClient({ token: "t", fetchImpl });
+    const snap = await analyzeRepository("acme", "demo", { client, ref: "v1.0.0", limits: { commitWindow: 0 } });
+    expect(snap.revision).toEqual({ sha: SHA, ref: "v1.0.0", committedAt: "2025-06-01T00:00:00Z" });
+    expect(calls).toContain("api.github.com/repos/acme/demo/commits/v1.0.0");
   });
 
   it("reports a missing or private repository as not found", async () => {

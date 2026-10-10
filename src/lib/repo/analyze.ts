@@ -3,6 +3,7 @@ import { CommitDetailResponse, CommitListResponse, CommitResponse, RepoResponse,
 import type { ActivityWindow, AnalysisStage, LinesNote, RepoFile, RepoSnapshot } from "@/lib/types";
 import { DEFAULT_EXCLUSIONS, type ExclusionConfig, exclusionReason, hasGeneratedMarker } from "./exclusions";
 import { detectLanguage, languageInfo } from "./languages";
+import { ImportCollector } from "./imports";
 import { countLines, estimateComplexity, isBinary } from "./metrics";
 import { readTar } from "./tar";
 
@@ -38,6 +39,8 @@ export function defaultLimits(hasToken: boolean): AnalysisLimits {
 
 export interface AnalyzeOptions {
   client: GitHubClient;
+  /** Branch, tag or commit SHA to analyze instead of the default branch. */
+  ref?: string;
   exclusions?: ExclusionConfig;
   limits?: Partial<AnalysisLimits>;
   onStage?: (stage: AnalysisStage, detail?: string) => void;
@@ -54,18 +57,19 @@ export async function analyzeRepository(owner: string, name: string, opts: Analy
   const now = opts.now ?? (() => new Date());
   const notes: string[] = [];
 
-  // 1. Repository + exact revision of the default branch.
+  // 1. Repository + exact revision of the default branch (or the requested ref).
   stage("connect", `${owner}/${name}`);
   const repo = RepoResponse.parse(await client.getJson(repoPath(owner, name)));
   if (repo.private) {
     // Never visualise private repositories, even if the server token could read them.
     throw new GitHubError("not_found", "Repository not found. It may not exist, or it may be private.", 404);
   }
-  const head = CommitResponse.parse(await client.getJson(repoPath(repo.owner.login, repo.name, "commits", repo.default_branch)));
+  const ref = opts.ref ?? repo.default_branch;
+  const head = CommitResponse.parse(await client.getJson(repoPath(repo.owner.login, repo.name, "commits", ref)));
   const sha = head.sha;
 
   // 2. Full file tree at that revision.
-  stage("structure", repo.default_branch);
+  stage("structure", ref);
   const tree = TreeResponse.parse(
     await client.getJson(repoPath(repo.owner.login, repo.name, "git", "trees", sha), {
       query: { recursive: "1" },
@@ -106,6 +110,7 @@ export async function analyzeRepository(owner: string, name: string, opts: Analy
       complexity: null,
       commits: null,
       lastModified: null,
+      ...(entry.sha && /^[0-9a-f]{40}$/.test(entry.sha) ? { blob: entry.sha } : {}),
     });
   }
   if (files.size > limits.maxIncludedFiles) {
@@ -118,15 +123,18 @@ export async function analyzeRepository(owner: string, name: string, opts: Analy
   // 3. Contents pass: exact line counts from one streamed tarball.
   stage("contents", `${files.size} files`);
   let stoppedEarly = false;
+  let contentsRead = false;
+  const imports = new ImportCollector();
   if (files.size > 0) {
     try {
-      stoppedEarly = await readContents(client, repo.owner.login, repo.name, sha, files, limits, (path) => {
+      stoppedEarly = await readContents(client, repo.owner.login, repo.name, sha, files, limits, imports, (path) => {
         const f = files.get(path);
         if (f) {
           files.delete(path);
           exclude("generated", f.size);
         }
       });
+      contentsRead = true;
     } catch (err) {
       const e = toNetworkError(err);
       if (e.code === "rate_limited") throw e;
@@ -164,6 +172,10 @@ export async function analyzeRepository(owner: string, name: string, opts: Analy
 
   stage("complete");
   const list = [...files.values()].sort(byPath);
+  const importGraph = contentsRead ? imports.finish(list) : undefined;
+  if (importGraph && stoppedEarly && importGraph.scanned > 0) {
+    notes.push("Dependency arcs only include imports from files whose contents were read before the budget was reached.");
+  }
   return {
     schemaVersion: 1,
     source: "live",
@@ -175,13 +187,14 @@ export async function analyzeRepository(owner: string, name: string, opts: Analy
       htmlUrl: repo.html_url,
       stars: repo.stargazers_count ?? null,
     },
-    revision: { sha, ref: repo.default_branch, committedAt: commitDate(head) },
+    revision: { sha, ref, committedAt: commitDate(head) },
     analyzedAt: now().toISOString(),
     files: list,
     excluded,
     tree: { truncated: tree.truncated, entries: blobs.length },
     lines: { counted, total: list.length, stoppedEarly },
     activity,
+    ...(importGraph ? { imports: importGraph } : {}),
     notes,
   };
 }
@@ -194,6 +207,7 @@ async function readContents(
   sha: string,
   files: Map<string, RepoFile>,
   limits: AnalysisLimits,
+  imports: ImportCollector,
   onGenerated: (path: string) => void,
 ): Promise<boolean> {
   const { body } = await client.openTarball(owner, repo, sha, limits.tarballTimeMs);
@@ -266,6 +280,7 @@ async function readContents(
       f.lines = countLines(data);
       delete f.linesNote;
       f.complexity = estimateComplexity(text, languageInfo(f.language).family);
+      imports.consider(path, f.language, text);
     },
   });
   return stopped;

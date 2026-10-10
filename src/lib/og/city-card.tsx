@@ -4,17 +4,18 @@ import { compact, formatDate, formatNumber, shortSha } from "@/lib/format";
 import { languageInfo } from "@/lib/repo/languages";
 import type { RepoSnapshot } from "@/lib/types";
 import { renderIsoCitySvg } from "./iso-city";
+import { PALETTES } from "@/lib/city/palette";
 
 export const OG_SIZE = { width: 1200, height: 630 };
 export const OG_ALT = "A GitHub repository drawn as a 3D city by GitCity";
 
 /** Preview images stay light: far fewer buildings than the interactive scene. */
 const OG_BUDGET = 1500;
-const INK = "#151515";
-const MUTED = "#66635d";
-const PAPER = "#f3f1ec";
-const LINE = "#d9d5cc";
-const ACCENT = "#d6401f";
+const CARD_THEMES = {
+  light: { ink: "#151515", muted: "#66635d", paper: "#f3f1ec", line: "#d9d5cc", accent: "#d6401f", lot: "#e9e5dc", lotEdge: "#b9b4a9" },
+  dark: { ink: "#edebe6", muted: "#9d998f", paper: "#141413", line: "#2f2e2b", accent: "#ee6a45", lot: "#292825", lotEdge: "#4a4843" },
+} as const;
+export type CardTheme = keyof typeof CARD_THEMES;
 
 type Kind = "live" | "saved" | "sample";
 
@@ -24,11 +25,12 @@ type Kind = "live" | "saved" | "sample";
  * never claims to show a city that doesn't exist.
  */
 export function cityCard(
-  input: { owner: string; repo: string; snapshot: RepoSnapshot | null; kind: Kind },
+  input: { owner: string; repo: string; snapshot: RepoSnapshot | null; kind: Kind; theme?: CardTheme },
   headers: Record<string, string>,
 ): ImageResponse {
-  const { owner, repo, snapshot, kind } = input;
-  const art = snapshot ? cityArt(snapshot) : null;
+  const { owner, repo, snapshot, kind, theme = "light" } = input;
+  const { ink: INK, muted: MUTED, paper: PAPER, line: LINE, accent: ACCENT } = CARD_THEMES[theme];
+  const art = snapshot ? cityArt(snapshot, theme) : null;
   const langs = snapshot ? topLanguages(snapshot, 4) : [];
   const lines = snapshot ? snapshot.files.reduce((s, f) => s + (f.lines ?? 0), 0) : 0;
   const caption = !snapshot
@@ -58,9 +60,9 @@ export function cityCard(
           {snapshot ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
               <div style={{ display: "flex", gap: 28, borderTop: `1px solid ${LINE}`, paddingTop: 18 }}>
-                <Stat value={formatNumber(snapshot.files.length)} label="files" />
-                <Stat value={compact(lines)} label="lines" />
-                <Stat value={String(new Set(snapshot.files.map((f) => f.language)).size)} label="languages" />
+                <Stat value={formatNumber(snapshot.files.length)} label="files" muted={MUTED} />
+                <Stat value={compact(lines)} label="lines" muted={MUTED} />
+                <Stat value={String(new Set(snapshot.files.map((f) => f.language)).size)} label="languages" muted={MUTED} />
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
                 {langs.map((l) => (
@@ -82,7 +84,7 @@ export function cityCard(
           ) : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={EMPTY_LOT} width={520} height={300} alt="" />
+              <img src={emptyLot(theme)} width={520} height={300} alt="" />
               <div style={{ fontSize: 20, color: MUTED }}>Not built yet</div>
             </div>
           )}
@@ -99,26 +101,29 @@ function titleSize(name: string): number {
 }
 
 /** An empty, dashed isometric lot: honest placeholder when no city has been built. */
-const EMPTY_LOT = `data:image/svg+xml;base64,${Buffer.from(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="300" viewBox="0 0 520 300">` +
-    `<polygon points="260,20 500,150 260,280 20,150" fill="#e9e5dc"/>` +
-    `<polygon points="260,20 500,150 260,280 20,150" fill="none" stroke="#b9b4a9" stroke-width="2" stroke-dasharray="10 8"/>` +
-    `</svg>`,
-).toString("base64")}`;
+function emptyLot(theme: CardTheme): string {
+  const t = CARD_THEMES[theme];
+  return `data:image/svg+xml;base64,${Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="300" viewBox="0 0 520 300">` +
+      `<polygon points="260,20 500,150 260,280 20,150" fill="${t.lot}"/>` +
+      `<polygon points="260,20 500,150 260,280 20,150" fill="none" stroke="${t.lotEdge}" stroke-width="2" stroke-dasharray="10 8"/>` +
+      `</svg>`,
+  ).toString("base64")}`;
+}
 
-function Stat({ value, label }: { value: string; label: string }) {
+function Stat({ value, label, muted }: { value: string; label: string; muted: string }) {
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
       <div style={{ fontSize: 30 }}>{value}</div>
-      <div style={{ fontSize: 18, color: MUTED }}>{label}</div>
+      <div style={{ fontSize: 18, color: muted }}>{label}</div>
     </div>
   );
 }
 
-function cityArt(snapshot: RepoSnapshot): string | null {
+function cityArt(snapshot: RepoSnapshot, theme: CardTheme): string | null {
   if (snapshot.files.length === 0) return null;
   const layout = generateCity(snapshot.files, { heightMetric: "lines", budget: OG_BUDGET });
-  const svg = renderIsoCitySvg(layout, { width: 700, height: 630, padding: 28 });
+  const svg = renderIsoCitySvg(layout, { width: 700, height: 630, padding: 28, palette: PALETTES[theme] });
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
 
