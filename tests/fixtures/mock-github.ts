@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { buildTar } from "@/lib/repo/tar";
 
@@ -33,7 +34,7 @@ export function mockGitHub(repo: MockRepo, overrides: Record<string, Handler> = 
       json({
         sha: SHA,
         truncated: repo.truncated ?? false,
-        tree: repo.files.map((f) => ({ path: f.path, mode: f.mode ?? "100644", type: "blob", size: enc.encode(f.content).length })),
+        tree: repo.files.map((f) => ({ path: f.path, mode: f.mode ?? "100644", type: "blob", sha: gitBlobSha(f.content), size: enc.encode(f.content).length })),
       }),
     [`/repos/acme/demo/tarball/${SHA}`]: () => new Response(null, { status: 302, headers: { location: `https://codeload.github.com/acme/demo/legacy.tar.gz/${SHA}` } }),
     [`/codeload/acme/demo/legacy.tar.gz/${SHA}`]: () => new Response(chunkedStream(tarball, repo.tarChunk ?? tarball.length), { status: 200 }),
@@ -67,4 +68,10 @@ function chunkedStream(buf: Uint8Array, size: number): ReadableStream<Uint8Array
       offset += size;
     },
   });
+}
+
+/** Git's blob id: sha1("blob <size>\0<content>"). */
+export function gitBlobSha(content: string): string {
+  const body = Buffer.from(content);
+  return createHash("sha1").update(Buffer.concat([Buffer.from(`blob ${body.length}\0`), body])).digest("hex");
 }

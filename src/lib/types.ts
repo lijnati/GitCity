@@ -24,6 +24,27 @@ export interface RepoFile {
   complexity: number | null;
   commits: number | null;
   lastModified: string | null;
+  /** Git blob SHA (exact content identity). Absent in snapshots made before it was recorded. */
+  blob?: string;
+}
+
+/**
+ * File-to-file import edges (JS/TS and Python), resolved inside the repository.
+ * Absent in snapshots made before the dependency layer existed.
+ */
+export interface ImportGraph {
+  /** [importer, imported] as indexes into `files`; sorted, unique, no self-edges. */
+  edges: [number, number][];
+  /** Files whose import statements were read. */
+  scanned: number;
+  /** Import statements that resolved to a file of this repository. */
+  resolved: number;
+  /** Imports of packages outside the repository (third-party or standard library). */
+  external: number;
+  /** Relative or aliased imports that matched no included file (excluded, generated, or missing). */
+  unresolved: number;
+  /** True when the edge list hit its cap. */
+  truncated: boolean;
 }
 
 export interface ActivityWindow {
@@ -71,6 +92,7 @@ export interface RepoSnapshot {
     stoppedEarly: boolean;
   };
   activity: ActivityWindow | null;
+  imports?: ImportGraph;
   notes: string[];
 }
 
