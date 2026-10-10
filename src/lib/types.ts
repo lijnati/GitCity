@@ -28,11 +28,16 @@ export interface RepoFile {
   blob?: string;
 }
 
+/** Language families whose imports GitCity reads (see `src/lib/repo/imports.ts`). */
+export type ImportFamily = "js" | "python" | "rust" | "go";
+
 /**
- * File-to-file import edges (JS/TS and Python), resolved inside the repository.
+ * File-to-file import edges, resolved inside the repository.
  * Absent in snapshots made before the dependency layer existed.
  */
 export interface ImportGraph {
+  /** Families whose files were scanned. Absent in snapshots made before Rust and Go support: those scanned JS/TS and Python only. */
+  languages?: ImportFamily[];
   /** [importer, imported] as indexes into `files`; sorted, unique, no self-edges. */
   edges: [number, number][];
   /** Files whose import statements were read. */

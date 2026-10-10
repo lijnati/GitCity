@@ -18,7 +18,7 @@ test.describe("desktop explorer", () => {
 
     const panel = page.getByTestId("detail-panel");
     await expect(panel).toBeVisible();
-    await expect(panel.getByRole("heading")).toHaveText("webview.rs");
+    await expect(panel.getByRole("heading", { level: 2 }).first()).toHaveText("webview.rs");
     await expect(panel).toContainText("Lines");
     await expect(panel).toContainText("exact");
     const link = panel.getByRole("link", { name: /View on GitHub/ });

@@ -37,6 +37,7 @@ export const SnapshotSchema = z.object({
     .nullable(),
   imports: z
     .object({
+      languages: z.array(z.enum(["js", "python", "rust", "go"])).max(4).optional(),
       edges: z.array(z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()])).max(100_000),
       scanned: z.number().int().nonnegative(),
       resolved: z.number().int().nonnegative(),

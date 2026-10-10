@@ -6,7 +6,7 @@ import { formatBytes, formatDate, formatNumber } from "@/lib/format";
 import { basename, dirname, languageInfo } from "@/lib/repo/languages";
 import type { LinesNote, RepoFile, RepoSnapshot } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { importFamily } from "@/lib/repo/imports";
+import { importFamily, scannedFamilies } from "@/lib/repo/imports";
 import { githubFileUrl, githubTreeUrl } from "./model";
 
 const LINES_NOTE: Record<LinesNote, string> = {
@@ -182,7 +182,9 @@ function FileDetail({ snapshot, file, onClose, onFocus }: { snapshot: RepoSnapsh
 function Dependencies({ snapshot, fileIndex, onOpenFile }: { snapshot: RepoSnapshot; fileIndex: number; onOpenFile?: (i: number) => void }) {
   const graph = snapshot.imports;
   const file = snapshot.files[fileIndex]!;
-  if (!graph || importFamily(file.language) === null) return null;
+  const family = importFamily(file.language);
+  // Older snapshots did not scan every family; show nothing rather than a false "None".
+  if (!graph || family === null || !scannedFamilies(graph).includes(family)) return null;
   const out: number[] = [];
   const inc: number[] = [];
   for (const [a, b] of graph.edges) {

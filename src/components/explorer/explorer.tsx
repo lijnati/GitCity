@@ -24,6 +24,7 @@ import { useTimelapse } from "./use-timelapse";
 import { buildTimelapseCity } from "@/lib/city/timelapse";
 import { colorModes, colorView, type ColorMode } from "@/lib/city/color-views";
 import { buildingEdges } from "@/lib/city/dependencies";
+import { familiesLabel, importFamily, scannedFamilies } from "@/lib/repo/imports";
 
 const CityScene = dynamic(() => import("@/components/scene/city-scene"), {
   ssr: false,
@@ -91,6 +92,14 @@ export function Explorer({
   const graph = snapshot.imports;
   const depEdges = useMemo(() => (graph ? buildingEdges(layout, graph) : null), [layout, graph]);
   const depsAvailable = Boolean(depEdges && depEdges.length > 0);
+  const depFamilies = useMemo(() => (graph ? scannedFamilies(graph) : []), [graph]);
+  // Families present in this snapshot that an older analysis did not scan.
+  const depMissing = useMemo(() => {
+    if (!graph) return "";
+    const present = new Set(snapshot.files.map((f) => importFamily(f.language)));
+    const missing = (["js", "python", "rust", "go"] as const).filter((f) => present.has(f) && !depFamilies.includes(f));
+    return missing.length ? ` This snapshot was analyzed before GitCity read ${familiesLabel(missing)} imports; rebuild the city to add them.` : "";
+  }, [graph, snapshot.files, depFamilies]);
 
   const effectiveView = cityAvailable ? view : "list";
   const selectedBuilding = selection ? layout.buildings[selection.buildingId] : undefined;
@@ -265,16 +274,17 @@ export function Explorer({
     if (arcsOn && graph && depEdges) {
       const limit = isMobile ? 1500 : 4000;
       out.push(
-        `Dependency arcs: ${formatNumber(graph.edges.length)} import links between ${formatNumber(graph.scanned)} JS/TS and Python files, resolved inside this repository (${formatNumber(graph.external)} imports of outside packages are not drawn${graph.unresolved ? `; ${formatNumber(graph.unresolved)} could not be resolved` : ""}).` +
+        `Dependency arcs: ${formatNumber(graph.edges.length)} import links between ${formatNumber(graph.scanned)} ${familiesLabel(depFamilies)} files, resolved inside this repository (${formatNumber(graph.external)} imports of outside packages are not drawn${graph.unresolved ? `; ${formatNumber(graph.unresolved)} could not be resolved` : ""}).` +
           (depEdges.length > limit && !selection ? ` Showing the first ${formatNumber(limit)} of ${formatNumber(depEdges.length)} building links; select a building to see all of its own.` : "") +
-          (graph.truncated ? " The edge list reached its cap." : ""),
+          (graph.truncated ? " The edge list reached its cap." : "") +
+          depMissing,
       );
     }
     if (colors && !tlActive) out.push(`Colour: ${colors.note}`);
     out.push(...snapshot.notes);
     if (!cityAvailable) out.push(contextLost ? "The 3D view stopped (graphics context lost). Showing the list view." : "This browser cannot display WebGL. Showing the list view.");
     return out;
-  }, [snapshot, layout, files.length, budget, cityAvailable, contextLost, pinned, permalink, tlActive, timelapse, arcsOn, graph, depEdges, isMobile, selection, colors]);
+  }, [snapshot, layout, files.length, budget, cityAvailable, contextLost, pinned, permalink, tlActive, timelapse, arcsOn, graph, depEdges, isMobile, selection, colors, depFamilies, depMissing]);
 
   const activityLabel = snapshot.activity
     ? `Commit counts and last-change dates cover the last ${snapshot.activity.commits} commits on ${snapshot.revision.ref}${snapshot.activity.oldest ? ` (since ${formatDate(snapshot.activity.oldest)})` : ""}.`
@@ -307,10 +317,10 @@ export function Explorer({
         available: depsAvailable,
         reason: !graph
           ? "Not available for this snapshot: it was analyzed before GitCity read imports. Rebuild the city to add them."
-          : "No imports between JS/TS or Python files of this repository were found.",
+          : `No imports between ${familiesLabel(depFamilies, "or")} files of this repository were found.${depMissing}`,
         on: showDeps,
         onChange: setShowDeps,
-        summary: graph ? `${formatNumber(graph.edges.length)} import links between files (JS/TS, Python).` : undefined,
+        summary: graph ? `${formatNumber(graph.edges.length)} import links between files (${familiesLabel(depFamilies)}).` : undefined,
       }}
     />
   );
