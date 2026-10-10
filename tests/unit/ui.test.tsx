@@ -25,6 +25,29 @@ function snapshot(files = [file("src/a.ts", 2048, 80), file("src/b.py", 100, nul
   };
 }
 
+describe("DetailContent dependencies", () => {
+  const graph = { edges: [] as [number, number][], scanned: 1, resolved: 0, external: 0, unresolved: 0, truncated: false };
+  const open = (imports: RepoSnapshot["imports"]) => {
+    const snap = { ...snapshot([file("src/lib.rs", 500, 20), file("src/a.ts", 100, 5)]), imports };
+    const city = generateCity(snap.files, { heightMetric: "lines", budget: 100 });
+    const b = city.buildings.find((x) => x.path === "src/lib.rs")!;
+    return render(<DetailContent snapshot={snap} building={b} fileIndex={null} onClose={() => {}} onFocus={() => {}} onSelectFile={() => {}} />);
+  };
+
+  it("shows a Rust file's imports when the graph scanned Rust", () => {
+    const view = open({ ...graph, languages: ["js", "python", "rust", "go"] });
+    expect(screen.getByTestId("deps-imports")).toHaveTextContent("None inside this repository.");
+    view.unmount();
+  });
+
+  it("hides the section for snapshots made before Rust was scanned, instead of claiming no imports", () => {
+    const view = open(graph);
+    expect(screen.getByRole("heading", { name: "lib.rs" })).toBeInTheDocument();
+    expect(screen.queryByTestId("deps-imports")).not.toBeInTheDocument();
+    view.unmount();
+  });
+});
+
 describe("DetailContent", () => {
   it("shows exact values, unavailable states and a pinned GitHub link", () => {
     const snap = snapshot();

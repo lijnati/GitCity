@@ -9,7 +9,7 @@ Every codebase is a city. Next.js App Router + React Three Fiber app that turns 
 - `src/components/scene/` — R3F rendering (instanced meshes). `src/components/explorer/` — UI shell. `src/app/` — routes + `/api/analyze` NDJSON stream.
 - Shared contracts in `src/lib/types.ts`, validated by `src/lib/snapshot-schema.ts`.
 - `src/lib/snapshot-store.ts` — private Vercel Blob storage (memory fallback without `BLOB_READ_WRITE_TOKEN`). Snapshots per SHA are write-once: permanent links must never change. Only default-branch analyses move the `latest/` pointer (which also feeds the gallery).
-- `src/lib/repo/imports.ts` — lexical import extraction + resolution (JS/TS, Python) for the dependency layer; `src/lib/city/{color-views,compare,dependencies}.ts` are pure and deterministic like the rest of the city engine.
+- `src/lib/repo/imports.ts` — lexical import extraction + resolution (JS/TS, Python, Rust, Go) for the dependency layer; `src/lib/city/{color-views,compare,dependencies}.ts` are pure and deterministic like the rest of the city engine.
 - Theme: CSS tokens flip under `[data-theme="dark"]` (set pre-paint by `src/lib/theme-script.ts`); scene/card colours come from `PALETTES` in `src/lib/city/palette.ts`. Use `bg-ink/[x]` tints, never `bg-black`/`bg-white`.
 - Image/embeds (`/api/card`, `/embed`, OG images) read stored snapshots only — they must never start an analysis. Only `/embed/*` may be framed.
 

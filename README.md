@@ -24,11 +24,11 @@ All screenshots were captured from the production build in headless Chromium (Sw
 - Orbit, pan, zoom, fit, reset, and eased camera focus. Hover tooltips. Click a building to see its details and a GitHub link pinned to the analyzed SHA.
 - Search, language filters, directory focus, a label toggle, and a height metric toggle (lines vs. size).
 - **List view**: an accessible, sortable table with the same data as the 3D scene.
-- Mobile-specific model: full-bleed canvas, filter drawer, bottom-sheet details, touch orbit and pinch, and a reduced render budget.
+- Mobile-specific model: full-bleed canvas, filter drawer, a **More** sheet with Compare and Embed, bottom-sheet details, touch orbit and pinch, and a reduced render budget.
 - **Time-lapse:** scrub or play through a repository's history and watch its city grow in place (see [Time-lapse](#time-lapse)).
 - **Link previews:** each city has its own 1200×630 preview image, an isometric drawing of its real layout with the repo's stats (see [Link previews](#link-previews)).
 - **Colour views:** recolour the city by recent activity, last change or estimated complexity, with an explicit "unavailable" colour (see [Colour views](#colour-views)).
-- **Dependency layer:** import links between JS/TS and Python files drawn as arcs; select a file to see what it imports and what imports it (see [Dependency layer](#dependency-layer)).
+- **Dependency layer:** import links between JS/TS, Python, Rust and Go files drawn as arcs; select a file to see what it imports and what imports it (see [Dependency layer](#dependency-layer)).
 - **Compare two cities:** two commits, branches or tags of one repository on one shared plan, with added, removed and modified files highlighted (see [Compare](#compare)).
 - **Gallery** of recently built cities, **README image cards** (light and dark) and an **interactive iframe embed** (see [Gallery and embeds](#gallery-and-embeds)).
 - **Dark theme**, following the system setting until you pick one with the toggle.
@@ -116,7 +116,16 @@ Turn on **Dependency arcs** in the sidebar to draw every resolved import as an a
 
 - **JavaScript / TypeScript** (including Vue and Svelte files): `import … from`, `export … from`, side-effect `import "x"`, `require()` and dynamic `import()`, after stripping comments. Resolution follows relative paths with extension and `index` probing (and `.js` → `.ts` for ESM TypeScript), the nearest `tsconfig.json`/`jsconfig.json` `baseUrl` and `paths`, and packages of the same repository by their `package.json` name (workspaces).
 - **Python:** `import a.b` and `from … import …`, including relative imports, resolved from the file's package, the repository root, `src/`, and the directory above the file's outermost package.
+- **Rust:** `mod x;` declarations and `use` trees (`use a::{b::C, d::{self, E}}`, `pub use`, `extern crate`), after stripping comments (including nested block comments) and string literals.
+  - `mod x;` resolves to `x.rs` or `x/mod.rs`: next to the file for `lib.rs`, `main.rs`, `mod.rs` and Cargo's auto-discovered crate roots (files directly in `tests/`, `examples/`, `benches/` or `src/bin/` of a package, and `build.rs`), otherwise in `<dir>/<stem>/`. So `mod common;` in `tests/test_x.rs` finds `tests/common/mod.rs`.
+  - `crate::`, `super::` and `self::` paths walk the module tree. The crate root is `src/lib.rs` (or `src/main.rs`) next to the nearest `Cargo.toml`. A path links to the **deepest module file that exists along it**: `use crate::config::Config` links to `config.rs`, and `use crate::Error` links to `lib.rs`, where the item must be declared. `self`/`super` inside an inline `mod tests { … }` are relative to that inline module, so `use super::*` in a test module stays inside its own file.
+  - A path that starts with a module or type declared in the same file (`mod config; pub use config::Config;`) resolves from that file.
+  - A path that starts with another crate resolves into that crate's root when a `Cargo.toml` in the repository declares it as `[package] name` (with `-` read as `_`). Only that key is read, with a line-based parser. `std`, `core`, `alloc` and every other crate are external.
+- **Go:** single-line and grouped `import ( … )` declarations, with aliases, `_` and `.` imports. An import path under a `module` declared in a `go.mod` of the repository (the longest matching module wins, so nested modules work) resolves to that package directory. **An import links to every non-test `.go` file in the package**, sorted by path, and counts as one resolved import: Go imports a whole package, so GitCity doesn't pick a single "representative" file. A package directory with no included non-test file counts as unresolved. The standard library and every other module are external.
 - Imports of packages outside the repository are counted, not drawn. Imports that point inside the repository but match no included file (for example a generated or excluded file) are counted as unresolved. Nothing is guessed, and the detail panel labels the result an **estimate**: extraction is lexical, not a full parse, and `tsconfig` `extends` chains are not followed.
+- Each stored graph records which languages it scanned. Snapshots analyzed before Rust and Go support show no Rust/Go dependency section (rather than a false "none") and the notes offer a rebuild.
+
+On the bundled tauri sample, Rust support takes the dependency layer from 163 import links (97 JS/TS files scanned) to 1,249 (422 files): 2,576 resolved imports, 2,207 external, 43 unresolved. The 4 unresolved Rust imports point at directories the exclusion rules drop (`build/`, `vendor/`) or at `[[bin]]` targets declared by path in `Cargo.toml`.
 
 **Budget:** up to 4,000 building links are drawn at once on desktop (1,500 on mobile) in one draw call; selecting a building always shows all of its own. Snapshots stored before this layer existed say so and offer a rebuild instead of showing an empty layer.
 
@@ -137,10 +146,16 @@ Turn on **Dependency arcs** in the sidebar to draw every resolved import as an a
 ## Gallery and embeds
 
 - **`/gallery`** lists the 48 most recently built default-branch cities, newest first, each with its card image, languages and stats, linking to its permanent snapshot. It is regenerated at most every 5 minutes. Set `GALLERY_EXCLUDE` (comma-separated `owner/repo` or `owner`) to hide entries, for example on request.
+- **Landing page:** a **Recently built** strip shows the 6 newest cities with the same `<CityCard>` as the gallery (`src/components/city-card.tsx`) and a **View all →** link. The landing page uses ISR (`revalidate = 300`), so storage is read at most every 5 minutes. If the list is empty (for example, the in-memory store used locally without `BLOB_READ_WRITE_TOKEN`) or storage fails, the strip is left out and the rest of the page renders as usual.
+  <img src="docs/screenshots/landing-recent.png" alt="The Recently built strip on the landing page, with two cities built locally" width="720">
 - **README card:** `/api/card/owner/repo` returns a PNG of the latest stored city (`?sha=` pins a saved one, `?theme=dark` matches dark READMEs). The **Embed** menu gives a ready `<picture>` snippet that follows GitHub's light/dark theme. Cards are cached at the edge and never start an analysis.
 - **Interactive embed:** `/embed/owner/repo` (optionally `?sha=`) is a minimal orbit-and-zoom city for iframes, with a link back to the full explorer. Only `/embed/*` may be framed (`Content-Security-Policy: frame-ancestors *`); every other page sends `X-Frame-Options: DENY`.
 
 ![Embed menu](docs/screenshots/embed-menu.png)
+
+**On phones**, Compare and Embed sit behind the **More** (⋯) button in the map toolbar, next to Filters and copy link. It opens a bottom sheet with the same base-ref form (invalid refs are refused before navigating) and the same README and iframe snippets, each copyable. Controls in the sheet are at least 44px tall, and the 36px toolbar button has a 44px hit area. Escape, the close button and tapping outside all close it.
+
+<img src="docs/screenshots/more-sheet-mobile.png" alt="The More sheet on a phone, with Compare and Embed" width="320">
 
 ## Dark theme
 
@@ -241,8 +256,8 @@ Each uncached analysis costs about 3 API requests, plus 1 tarball download and *
 - **Unit:** input parsing (valid, invalid and malicious), exclusions, languages, line counting, complexity, tar parsing at many chunk sizes, scale functions, layout determinism, non-overlap, containment, stable file→building mapping, budget aggregation, cache and rate limiter.
 - **Integration (mocked GitHub):** a full analysis, plus these cases: 404 or private, private-flag refusal, empty repository, rate limits (403/429 with reset), 5xx, network failure, timeout, truncated tree, tarball failure, a redirect to a foreign host, oversized files, content budget, a rate-limited history call, the no-token window, file limits, and a 20k-file tree.
 - **Component:** detail-panel unavailable states, aggregates, sidebar search/filter, and the filter model.
-- **Features:** import extraction and resolution (JS/TS forms, tsconfig paths, workspaces, Python relative/absolute), colour-view bucketing and unavailable states, compare classification (blob SHA and fallback) and shared-plan frames, building-level edges, ref validation, gallery listing, the `ref` analysis path (no `latest` move) and the README card route.
-- **E2E (Playwright, desktop + Pixel 7):** colour views, dependency arcs and the detail-panel import lists, theme toggle persistence, compare (mocked analyses, change list, Base/Head switching, invalid refs refused client-side), gallery, embed snippets, frame headers, and earlier: landing, validation, URL normalisation with mocked progress, error states, 404, search → detail panel, clicking a building, language filter + list view + sorting, camera controls and shortcuts, directory focus, touch orbit + tap-to-select + bottom sheet, the filter drawer, no horizontal overflow, and zero console errors.
+- **Features:** import extraction and resolution (JS/TS forms, tsconfig paths, workspaces, Python relative/absolute, Rust `mod` layouts, `crate`/`super`/`self` paths, inline test modules and workspace crates, Go grouped imports, module prefixes, nested modules and externals), the Rust/Go dependency section on old snapshots, colour-view bucketing and unavailable states, compare classification (blob SHA and fallback) and shared-plan frames, building-level edges, ref validation, gallery listing, the `ref` analysis path (no `latest` move) and the README card route.
+- **E2E (Playwright, desktop + Pixel 7):** colour views, dependency arcs and the detail-panel import lists, theme toggle persistence, compare (mocked analyses, change list, Base/Head switching, invalid refs refused client-side), gallery, embed snippets, the phone **More** sheet at 390px (44px targets, invalid ref refused, README snippet copied, Escape/outside-tap close, no overflow), frame headers, and earlier: landing, validation, URL normalisation with mocked progress, error states, 404, search → detail panel, clicking a building, language filter + list view + sorting, camera controls and shortcuts, directory focus, touch orbit + tap-to-select + bottom sheet, the filter drawer, no horizontal overflow, and zero console errors.
 
 ## Known limitations
 
@@ -254,8 +269,9 @@ Each uncached analysis costs about 3 API requests, plus 1 tarball download and *
 - **Complexity** is a lexical estimate, not a parsed metric.
 - **UI primitives.** The shadcn/ui registry wasn't reachable from the development sandbox, so `src/components/ui/` contains hand-written components in the same pattern (cva + tailwind-merge).
 - **Link previews** show the latest analysis stored at the time a crawler fetches them. Use the permanent link to share an exact snapshot.
-- **Dependency arcs** cover JavaScript/TypeScript and Python only (Rust, Go and others are next). Extraction is lexical; `tsconfig` `extends` and bundler-specific aliases are not followed.
-- **Compare and Embed menus** are in the desktop top bar; on phones, open `/compare/owner/repo` directly.
+- **Dependency arcs** cover JavaScript/TypeScript, Python, Rust and Go. Extraction is lexical; `tsconfig` `extends` and bundler-specific aliases are not followed.
+- **Rust:** only `[package] name` is read from `Cargo.toml`. Not followed: `#[path = "…"]` attributes, `[lib]`/`[[bin]]` `path` and `name` overrides (a `mod` in a `[[bin]]` root outside `src/main.rs` counts as unresolved), renamed dependencies (`foo = { package = "bar" }`), modules generated by macros or `build.rs`, and 2015-edition paths without `crate::`. `crate::` in `tests/`, `examples/`, `benches/` and `src/bin/` files resolves against the package's library or main root. Paths written inline in expressions (`crate::a::f()`) are not imports and are not read.
+- **Go:** build tags and `//go:build` constraints are ignored (every non-test file in the package is linked), as are `replace` directives and `vendor/`.
 - **The gallery is unmoderated:** it lists any public repository someone built. Use `GALLERY_EXCLUDE` to hide one.
 
 ## Deployment
