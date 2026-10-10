@@ -146,6 +146,8 @@ On the bundled tauri sample, Rust support takes the dependency layer from 163 im
 ## Gallery and embeds
 
 - **`/gallery`** lists the 48 most recently built default-branch cities, newest first, each with its card image, languages and stats, linking to its permanent snapshot. It is regenerated at most every 5 minutes. Set `GALLERY_EXCLUDE` (comma-separated `owner/repo` or `owner`) to hide entries, for example on request.
+- **Landing page:** a **Recently built** strip shows the 6 newest cities with the same `<CityCard>` as the gallery (`src/components/city-card.tsx`) and a **View all →** link. The landing page uses ISR (`revalidate = 300`), so storage is read at most every 5 minutes. If the list is empty (for example, the in-memory store used locally without `BLOB_READ_WRITE_TOKEN`) or storage fails, the strip is left out and the rest of the page renders as usual.
+  <img src="docs/screenshots/landing-recent.png" alt="The Recently built strip on the landing page, with two cities built locally" width="720">
 - **README card:** `/api/card/owner/repo` returns a PNG of the latest stored city (`?sha=` pins a saved one, `?theme=dark` matches dark READMEs). The **Embed** menu gives a ready `<picture>` snippet that follows GitHub's light/dark theme. Cards are cached at the edge and never start an analysis.
 - **Interactive embed:** `/embed/owner/repo` (optionally `?sha=`) is a minimal orbit-and-zoom city for iframes, with a link back to the full explorer. Only `/embed/*` may be framed (`Content-Security-Policy: frame-ancestors *`); every other page sends `X-Frame-Options: DENY`.
 

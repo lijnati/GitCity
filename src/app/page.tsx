@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { GitHubMark } from "@/components/github-mark";
+import { RecentCities } from "@/components/landing/recent-cities";
 import { RepoForm } from "@/components/landing/repo-form";
 import { LandingPreview } from "@/components/landing/preview";
 import { Logo } from "@/components/logo";
@@ -7,6 +8,9 @@ import { ThemeToggle } from "@/components/theme";
 import { formatNumber } from "@/lib/format";
 import { sampleSnapshot } from "@/lib/sample";
 import { SITE } from "@/lib/site";
+
+/** The "Recently built" strip reads storage; rebuild at most every five minutes, like the gallery. */
+export const revalidate = 300;
 
 const LEGEND = [
   { n: "01", term: "Building", def: "One source file. Files are never invented or duplicated; each building links to the exact file on GitHub." },
@@ -76,6 +80,8 @@ export default function Home() {
             <LandingPreview snapshot={sampleSnapshot} />
           </div>
         </section>
+
+        <RecentCities />
 
         <section id="how-to-read" className="border-t border-line bg-surface">
           <div className="mx-auto max-w-[1320px] px-5 py-16 md:px-8 md:py-24">
