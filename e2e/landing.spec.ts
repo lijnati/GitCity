@@ -44,7 +44,7 @@ test("normalises a GitHub URL and builds the city with real progress stages", as
   await page.getByPlaceholder("github.com/owner/repository").fill("https://github.com/acme/demo.git");
   await page.getByRole("button", { name: "Build my city →" }).click();
   await expect(page).toHaveURL("/city/acme/demo");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("acme/demo");
+  await expect(page.getByRole("banner").getByRole("heading", { level: 1 })).toContainText("acme/demo");
   await expect(page.locator("main canvas")).toBeVisible();
   await expect(page.getByTestId("notices")).toContainText("Opening this link later rebuilds the city");
   c.expectClean();
