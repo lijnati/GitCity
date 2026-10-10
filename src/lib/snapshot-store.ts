@@ -1,6 +1,6 @@
 import { BlobNotFoundError, get, head, put } from "@vercel/blob";
-import { parseSnapshot } from "./snapshot-schema";
-import type { RepoSnapshot } from "./types";
+import { parseSnapshot, parseTimelapse } from "./snapshot-schema";
+import type { RepoSnapshot, Timelapse } from "./types";
 
 /**
  * Durable snapshot storage, shared by every server instance.
@@ -18,6 +18,9 @@ export interface SnapshotStore {
   getSnapshot(owner: string, repo: string, sha: string): Promise<RepoSnapshot | null>;
   getLatest(owner: string, repo: string): Promise<{ snapshot: RepoSnapshot; savedAt: number } | null>;
   save(snapshot: RepoSnapshot): Promise<void>;
+  /** Time-lapse sampled up to `headSha`; write-once like snapshots. */
+  getTimelapse(owner: string, repo: string, headSha: string): Promise<Timelapse | null>;
+  saveTimelapse(timelapse: Timelapse): Promise<void>;
 }
 
 interface LatestPointer {
@@ -34,6 +37,7 @@ export function permalinkFor(s: RepoSnapshot): string {
 const MAX_SNAPSHOT_BYTES = 60_000_000;
 
 const snapshotPath = (owner: string, repo: string, sha: string) => `snapshots/${owner.toLowerCase()}/${repo.toLowerCase()}/${sha}.json`;
+const timelapsePath = (owner: string, repo: string, sha: string) => `timelapse/${owner.toLowerCase()}/${repo.toLowerCase()}/${sha}.json`;
 const latestPath = (owner: string, repo: string) => `latest/${owner.toLowerCase()}/${repo.toLowerCase()}.json`;
 
 export class MemorySnapshotStore implements SnapshotStore {
@@ -60,6 +64,17 @@ export class MemorySnapshotStore implements SnapshotStore {
     if (!this.data.has(path)) this.data.set(path, JSON.stringify(snapshot));
     this.data.set(latestPath(owner, name), JSON.stringify({ sha: snapshot.revision.sha, savedAt: now } satisfies LatestPointer));
   }
+
+  async getTimelapse(owner: string, repo: string, headSha: string) {
+    if (!SHA_RE.test(headSha)) return null;
+    const raw = this.data.get(timelapsePath(owner, repo, headSha));
+    return raw ? parseTimelapse(JSON.parse(raw)) : null;
+  }
+
+  async saveTimelapse(t: Timelapse) {
+    const path = timelapsePath(t.owner, t.name, t.headSha);
+    if (!this.data.has(path)) this.data.set(path, JSON.stringify(t));
+  }
 }
 
 export class BlobSnapshotStore implements SnapshotStore {
@@ -71,6 +86,33 @@ export class BlobSnapshotStore implements SnapshotStore {
     if (!res || res.statusCode !== 200) return null;
     if (res.blob.size > MAX_SNAPSHOT_BYTES) throw new Error("Stored snapshot exceeds size limit");
     return JSON.parse(await new Response(res.stream).text());
+  }
+
+  private async putOnce(pathname: string, body: string) {
+    if (await this.exists(pathname)) return;
+    try {
+      await put(pathname, body, {
+        access: "private",
+        addRandomSuffix: false,
+        contentType: "application/json",
+        token: this.token,
+        allowOverwrite: false,
+        multipart: body.length > 4_000_000,
+      });
+    } catch (err) {
+      // Another instance may have stored the same object concurrently.
+      if (!(await this.exists(pathname))) throw err;
+    }
+  }
+
+  async getTimelapse(owner: string, repo: string, headSha: string) {
+    if (!SHA_RE.test(headSha)) return null;
+    const data = await this.read(timelapsePath(owner, repo, headSha));
+    return data ? parseTimelapse(data) : null;
+  }
+
+  async saveTimelapse(t: Timelapse) {
+    await this.putOnce(timelapsePath(t.owner, t.name, t.headSha), JSON.stringify(t));
   }
 
   private async exists(pathname: string): Promise<boolean> {
@@ -100,16 +142,8 @@ export class BlobSnapshotStore implements SnapshotStore {
     const { owner, name } = snapshot.repo;
     const body = JSON.stringify(snapshot);
     const common = { access: "private" as const, addRandomSuffix: false, contentType: "application/json", token: this.token };
-    const path = snapshotPath(owner, name, snapshot.revision.sha);
     // Write-once: a permanent link must keep showing the analysis it was shared with.
-    if (!(await this.exists(path))) {
-      try {
-        await put(path, body, { ...common, allowOverwrite: false, multipart: body.length > 4_000_000 });
-      } catch (err) {
-        // Another instance may have stored the same commit concurrently.
-        if (!(await this.exists(path))) throw err;
-      }
-    }
+    await this.putOnce(snapshotPath(owner, name, snapshot.revision.sha), body);
     await put(latestPath(owner, name), JSON.stringify({ sha: snapshot.revision.sha, savedAt: Date.now() } satisfies LatestPointer), {
       ...common,
       allowOverwrite: true,

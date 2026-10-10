@@ -25,6 +25,7 @@ All screenshots were captured from the production build in headless Chromium (Sw
 - Search, language filters, directory focus, a label toggle, and a height metric toggle (lines vs. size).
 - **List view**: an accessible, sortable table with the same data as the 3D scene.
 - Mobile-specific model: full-bleed canvas, filter drawer, bottom-sheet details, touch orbit and pinch, and a reduced render budget.
+- **Time-lapse:** scrub or play through a repository's history and watch its city grow in place (see [Time-lapse](#time-lapse)).
 - **Link previews:** each city has its own 1200×630 preview image, an isometric drawing of its real layout with the repo's stats (see [Link previews](#link-previews)).
 - Shareable URLs: `/city/owner/repo` shows the default branch as it is now, and `/city/owner/repo/<sha>` is a **permanent link** to a saved snapshot that never changes. Both have copy-link actions and per-route metadata.
 - Bundled real sample (`/sample`) that works offline. It is clearly labelled as a captured snapshot.
@@ -66,6 +67,22 @@ Excluded files are counted by reason and the count is shown.
 | `latest/{owner}/{repo}.json` | Pointer to the newest analysis; serves as the shared cache | Overwritten on each new analysis |
 
 `/city/owner/repo` reuses the latest stored analysis for an hour, then re-analyzes the default branch. Requests with a SHA (`?sha=`) are served from storage only and never trigger an analysis. If storage is unavailable, the city still renders, but without a permanent link.
+
+## Time-lapse
+
+![Time-lapse of the bundled tauri sample, April 2022](docs/screenshots/timelapse-desktop.png)
+
+**What it shows.** The **Time-lapse** button (or `?timelapse=1` on any city URL) samples up to **16 commits evenly across the default branch's history**, oldest first, ending exactly at the commit on screen.
+
+**Truthful by construction:**
+
+- **Heights show file size during the time-lapse.** Each frame is one Git tree read, so sizes are exact. Past commits have no line counts, because reading every frame's contents would multiply the cost by the repository size. The UI says so.
+- **The city grows in place.** `buildTimelapseCity` (`src/lib/city/timelapse.ts`) lays out the union of all files once, with each slot sized for that file's largest version. Frames only change heights, footprints and visibility, so buildings never move or overlap.
+- **Path-based tracking.** Renamed files appear as removed and added. Generated-code markers need file contents, so they aren't applied to frames.
+
+**Cost.** About `2 × frames + 3` GitHub API requests per new time-lapse; for comparison, a full city analysis needs about 9 without a token. Building one requires `GITHUB_TOKEN` on the server; without it, the UI explains that the time-lapse is unavailable. It is limited to 3 per IP per 10 minutes per instance. Results are stored write-once in Blob as `timelapse/{owner}/{repo}/{headSha}.json`, so a repeat costs nothing.
+
+**Sampling.** GitHub's commit list includes commits merged in from other branches; there is no first-parent option. The `/sample` time-lapse is bundled (built with `pnpm sample:timelapse` from a local clone using the same sampling and filtering), so it needs no API access.
 
 ## Link previews
 

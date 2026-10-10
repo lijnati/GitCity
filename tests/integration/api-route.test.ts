@@ -91,6 +91,8 @@ describe("/api/analyze with the snapshot store", () => {
       save: async () => {
         throw new Error("write down");
       },
+      getTimelapse: async () => null,
+      saveTimelapse: async () => {},
     };
     const GET = await newInstance(broken);
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});

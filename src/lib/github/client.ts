@@ -64,13 +64,21 @@ export class GitHubClient {
 
   /** GET a JSON resource under api.github.com. `path` must come from `repoPath`. */
   async getJson<T = unknown>(path: string, opts: { maxBytes?: number; timeoutMs?: number; query?: Record<string, string> } = {}): Promise<T> {
+    return (await this.getJsonWithHeaders<T>(path, opts)).data;
+  }
+
+  /** Like `getJson`, but also returns response headers (e.g. `Link` for pagination). */
+  async getJsonWithHeaders<T = unknown>(
+    path: string,
+    opts: { maxBytes?: number; timeoutMs?: number; query?: Record<string, string> } = {},
+  ): Promise<{ data: T; headers: Headers }> {
     if (!path.startsWith("/repos/")) throw new Error("Refusing to request a non-repository path");
     const url = new URL(API_HOST + path);
     for (const [k, v] of Object.entries(opts.query ?? {})) url.searchParams.set(k, v);
     const res = await this.send(url, { timeoutMs: opts.timeoutMs });
     const text = await readTextLimited(res, opts.maxBytes ?? 5_000_000);
     try {
-      return JSON.parse(text) as T;
+      return { data: JSON.parse(text) as T, headers: res.headers };
     } catch {
       throw new GitHubError("upstream", "GitHub returned an unreadable response.", res.status);
     }
@@ -182,4 +190,20 @@ export async function readTextLimited(res: Response, maxBytes: number): Promise<
     o += p.length;
   }
   return new TextDecoder().decode(buf);
+}
+
+/** Page number of the `rel="last"` link in a GitHub `Link` header, or null. */
+export function lastPageFromLink(link: string | null): number | null {
+  if (!link) return null;
+  for (const part of link.split(",")) {
+    const m = /<([^>]+)>\s*;\s*rel="last"/.exec(part);
+    if (!m) continue;
+    try {
+      const page = Number(new URL(m[1]!).searchParams.get("page"));
+      return Number.isInteger(page) && page > 0 ? page : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }

@@ -19,7 +19,8 @@
     "test:watch": "vitest",
     "e2e": "pnpm build && playwright test",
     "sample": "tsx scripts/build-sample.ts",
-    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
+    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "sample:timelapse": "tsx scripts/build-sample-timelapse.ts"
   },
   "dependencies": {
     "@react-three/drei": "10.7.9",

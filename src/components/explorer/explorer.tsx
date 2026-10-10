@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { Box, Info, List, SlidersHorizontal, X } from "lucide-react";
+import { Box, History, Info, List, SlidersHorizontal, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RENDER_BUDGET } from "@/lib/city/aggregate";
 import { generateCity } from "@/lib/city/layout";
@@ -18,6 +18,9 @@ import { FileList } from "./file-list";
 import { useIsMobile, useReducedMotion, useWebGLSupport } from "./hooks";
 import { activeBuildings, directoryTree, hasFilters, languageStats, matchFiles, type Filters } from "./model";
 import { Sidebar } from "./sidebar";
+import { TimelapseBar } from "./timelapse-bar";
+import { useTimelapse } from "./use-timelapse";
+import { buildTimelapseCity } from "@/lib/city/timelapse";
 
 const CityScene = dynamic(() => import("@/components/scene/city-scene"), {
   ssr: false,
@@ -59,6 +62,9 @@ export function Explorer({
   const [sheetExpanded, setSheetExpanded] = useState(false);
   const [noticesOpen, setNoticesOpen] = useState(true);
   const [hover, setHover] = useState<{ id: number; x: number; y: number } | null>(null);
+  const [timelapseOn, setTimelapseOn] = useState(false);
+  const [frameIndex, setFrameIndex] = useState(0);
+  const [playing, setPlaying] = useState(false);
 
   const camera = useRef<CameraApi | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -77,6 +83,51 @@ export function Explorer({
   const effectiveView = cityAvailable ? view : "list";
   const selectedBuilding = selection ? layout.buildings[selection.buildingId] : undefined;
 
+  // Time-lapse: a separate, stable layout of every file that ever existed in the sampled frames.
+  const timelapse = useTimelapse(snapshot, timelapseOn);
+  const tlCity = useMemo(() => (timelapse.status === "ready" ? buildTimelapseCity(timelapse.data, budget) : null), [timelapse, budget]);
+  const tlActive = timelapseOn && tlCity !== null && effectiveView === "city";
+  const tlFrames = timelapse.status === "ready" ? timelapse.data.frames.length : 0;
+  const tlFrame = tlActive ? tlCity.frames[Math.min(frameIndex, tlFrames - 1)]! : null;
+  const sceneLayout = tlActive ? tlCity.layout : layout;
+  const tlMask = useMemo(() => (tlCity && filtered ? matchFiles(tlCity.files, filters) : null), [tlCity, filtered, filters]);
+  const sceneActive = tlActive ? (tlMask ? activeBuildings(tlCity.layout, tlMask) : null) : active;
+
+  // Start each loaded time-lapse from the first frame; autoplay unless motion is reduced.
+  const [startedFor, setStartedFor] = useState<unknown>(null);
+  if (timelapse.status === "ready" && startedFor !== timelapse.data) {
+    setStartedFor(timelapse.data);
+    setFrameIndex(0);
+    setPlaying(!reducedMotion);
+  }
+  useEffect(() => {
+    if (!playing || !tlActive) return;
+    if (frameIndex >= tlFrames - 1) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPlaying(false);
+      return;
+    }
+    const t = setTimeout(() => setFrameIndex((i) => Math.min(i + 1, tlFrames - 1)), reducedMotion ? 1400 : 1100);
+    return () => clearTimeout(t);
+  }, [playing, tlActive, frameIndex, tlFrames, reducedMotion]);
+
+  const startTimelapse = useCallback(() => {
+    setView("city");
+    setSelection(null);
+    setTimelapseOn(true);
+  }, []);
+  const exitTimelapse = useCallback(() => {
+    setTimelapseOn(false);
+    setPlaying(false);
+  }, []);
+
+  // `?timelapse=1` opens the time-lapse directly (shareable).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("timelapse") !== "1") return;
+    const t = setTimeout(startTimelapse, 0);
+    return () => clearTimeout(t);
+  }, [startTimelapse]);
+
   // Selection is stored by building id; when the layout changes (metric/budget), drop it.
   const [layoutForSelection, setLayoutForSelection] = useState(layout);
   if (layoutForSelection !== layout) {
@@ -89,6 +140,7 @@ export function Explorer({
       const id = layout.fileToBuilding[fileIndex]!;
       const b = layout.buildings[id];
       if (!b) return;
+      setTimelapseOn(false);
       setSelection({ buildingId: id, fileIndex: b.kind === "aggregate" ? fileIndex : null });
       setDrawerOpen(false);
       if (effectiveView === "city") camera.current?.focusBuilding(id);
@@ -112,7 +164,21 @@ export function Explorer({
     });
   }, []);
 
-  // Keyboard shortcuts.
+  // Keyboard shortcuts. Time-lapse keys go through a ref so the listener stays stable.
+  const tlKeys = useRef<((key: string) => void) | null>(null);
+  useEffect(() => {
+    tlKeys.current = tlActive
+      ? (key) => {
+          if (key === " ") {
+            if (!playing && frameIndex >= tlFrames - 1) setFrameIndex(0);
+            setPlaying(!playing);
+          } else {
+            setPlaying(false);
+            setFrameIndex((i) => (key === "ArrowLeft" ? Math.max(0, i - 1) : Math.min(tlFrames - 1, i + 1)));
+          }
+        }
+      : null;
+  }, [tlActive, frameIndex, tlFrames, playing]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -124,6 +190,12 @@ export function Explorer({
         return;
       }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (tlKeys.current && (e.key === " " || e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        if (t?.tagName === "BUTTON" && e.key === " ") return;
+        e.preventDefault();
+        tlKeys.current(e.key);
+        return;
+      }
       if (e.key === "/") {
         e.preventDefault();
         if (isMobile) setDrawerOpen(true);
@@ -165,10 +237,18 @@ export function Explorer({
     if (snapshot.excluded.count > 0) {
       out.push(`${formatNumber(snapshot.excluded.count)} files were excluded (dependencies, build output, lockfiles, binaries, generated code).`);
     }
+    if (tlActive && timelapse.status === "ready") {
+      const d = timelapse.data;
+      const truncated = d.frames.filter((f) => f.truncated).length;
+      out.unshift(
+        `Time-lapse: ${d.frames.length} commits sampled evenly from ${formatNumber(d.totalCommits)} on ${d.ref}, oldest first. Heights show file size during the time-lapse (past commits have no line counts). Renamed files appear as removed and added; generated-code markers can't be checked without file contents.` +
+          (truncated ? ` ${truncated} frame${truncated === 1 ? " was" : "s were"} truncated by GitHub.` : ""),
+      );
+    }
     out.push(...snapshot.notes);
     if (!cityAvailable) out.push(contextLost ? "The 3D view stopped (graphics context lost). Showing the list view." : "This browser cannot display WebGL. Showing the list view.");
     return out;
-  }, [snapshot, layout, files.length, budget, cityAvailable, contextLost, pinned, permalink]);
+  }, [snapshot, layout, files.length, budget, cityAvailable, contextLost, pinned, permalink, tlActive, timelapse]);
 
   const activityLabel = snapshot.activity
     ? `Commit counts and last-change dates cover the last ${snapshot.activity.commits} commits on ${snapshot.revision.ref}${snapshot.activity.oldest ? ` (since ${formatDate(snapshot.activity.oldest)})` : ""}.`
@@ -208,7 +288,7 @@ export function Explorer({
     />
   );
 
-  const hovered = hover ? layout.buildings[hover.id] : undefined;
+  const hovered = hover ? sceneLayout.buildings[hover.id] : undefined;
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-paper">
@@ -242,6 +322,20 @@ export function Explorer({
                 <List className="size-4" aria-hidden /> List
               </button>
             </div>
+            <button
+              type="button"
+              aria-pressed={timelapseOn}
+              disabled={!cityAvailable}
+              onClick={() => (timelapseOn ? exitTimelapse() : startTimelapse())}
+              className={cn(
+                "flex h-9 items-center gap-1.5 border border-line-strong px-2.5 text-[13px] disabled:opacity-40 md:px-3",
+                timelapseOn ? "bg-ink text-paper" : "bg-surface text-ink-2 hover:bg-black/[0.05]",
+              )}
+              title="Watch the city grow through its history"
+            >
+              <History className="size-4" aria-hidden /> <span className="hidden sm:inline">Time-lapse</span>
+              <span className="sr-only sm:hidden">Time-lapse</span>
+            </button>
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
@@ -296,15 +390,17 @@ export function Explorer({
           {effectiveView === "city" ? (
             <CityScene
               className="absolute inset-0 touch-none"
-              layout={layout}
-              active={active}
-              selectedId={selection?.buildingId ?? null}
+              layout={sceneLayout}
+              active={sceneActive}
+              frame={tlFrame}
+              selectedId={tlActive ? null : (selection?.buildingId ?? null)}
               showLabels={showLabels}
               cameraRef={camera}
               lowPower={isMobile}
               reducedMotion={reducedMotion}
               onHover={(id, x, y) => setHover(id === null ? null : { id, x, y })}
               onSelect={(id) => {
+                if (tlActive) return;
                 setSelection(id === null ? null : { buildingId: id, fileIndex: null });
                 if (id !== null) setSheetExpanded(false);
               }}
@@ -344,12 +440,30 @@ export function Explorer({
           {/* Bottom bar: legend + controls */}
           {effectiveView === "city" && (
             <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 flex items-end justify-between gap-3 md:inset-x-4 md:bottom-4">
+              {timelapseOn ? (
+                <TimelapseBar
+                  state={timelapse}
+                  frameIndex={Math.min(frameIndex, Math.max(0, tlFrames - 1))}
+                  playing={playing}
+                  fileCount={tlFrame?.fileCount ?? 0}
+                  onFrame={(i) => {
+                    setPlaying(false);
+                    setFrameIndex(i);
+                  }}
+                  onTogglePlay={() => {
+                    if (!playing && frameIndex >= tlFrames - 1) setFrameIndex(0);
+                    setPlaying(!playing);
+                  }}
+                  onExit={exitTimelapse}
+                />
+              ) : (
               <div className="pointer-events-auto hidden border border-line-strong bg-surface/95 px-3 py-2 lg:block">
                 <Legend heightMetric={heightMetric} />
                 <p className="mt-1 text-[11.5px] text-muted">
                   Drag to orbit · right-drag to pan · scroll to zoom · click a building · <Kbd>/</Kbd> search <Kbd>F</Kbd> fit <Kbd>L</Kbd> labels
                 </p>
               </div>
+              )}
               <CameraControls camera={camera} className={cn("pointer-events-auto ml-auto", isMobile && selectedBuilding && "hidden")} />
             </div>
           )}

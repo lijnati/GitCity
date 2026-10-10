@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { RepoSnapshot } from "./types";
+import type { RepoSnapshot, Timelapse } from "./types";
 
 const iso = z.string().max(64);
 
@@ -39,4 +39,34 @@ export const SnapshotSchema = z.object({
 
 export function parseSnapshot(data: unknown): RepoSnapshot {
   return SnapshotSchema.parse(data) as RepoSnapshot;
+}
+
+export const TimelapseSchema = z.object({
+  schemaVersion: z.literal(1),
+  source: z.enum(["live", "sample"]),
+  owner: z.string().max(64),
+  name: z.string().max(128),
+  ref: z.string().max(256),
+  headSha: z.string().regex(/^[0-9a-f]{40}$/),
+  totalCommits: z.number().int().nonnegative(),
+  paths: z.array(z.string().min(1).max(4096)).max(100_000),
+  frames: z
+    .array(
+      z.object({
+        sha: z.string().regex(/^[0-9a-f]{40}$/),
+        date: iso.nullable(),
+        index: z.number().int().positive(),
+        files: z.array(z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()])).max(100_000),
+        truncated: z.boolean(),
+      }),
+    )
+    .min(1)
+    .max(32),
+  createdAt: iso,
+});
+
+export function parseTimelapse(data: unknown): Timelapse {
+  const t = TimelapseSchema.parse(data) as Timelapse;
+  for (const f of t.frames) for (const [i] of f.files) if (i >= t.paths.length) throw new Error("Timelapse path index out of range");
+  return t;
 }
