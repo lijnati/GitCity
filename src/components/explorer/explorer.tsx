@@ -19,7 +19,7 @@ import { useIsMobile, useReducedMotion, useWebGLSupport } from "./hooks";
 import { activeBuildings, directoryTree, hasFilters, languageStats, matchFiles, type Filters } from "./model";
 import { Sidebar } from "./sidebar";
 import { TimelapseBar } from "./timelapse-bar";
-import { CompareMenu, EmbedMenu } from "./top-menus";
+import { CompareMenu, EmbedMenu, MoreSheet } from "./top-menus";
 import { useTimelapse } from "./use-timelapse";
 import { buildTimelapseCity } from "@/lib/city/timelapse";
 import { colorModes, colorView, type ColorMode } from "@/lib/city/color-views";
@@ -405,6 +405,7 @@ export function Explorer({
               path={permalink ?? undefined}
               ariaLabel={permalink && !pinned ? "Copy a permanent link to this exact snapshot" : "Copy link to this city"}
             />
+            {isMobile && <MoreSheet snapshot={snapshot} pinned={pinned} className="md:hidden" />}
           </div>
 
           {/* Notices */}

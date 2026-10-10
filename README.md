@@ -24,7 +24,7 @@ All screenshots were captured from the production build in headless Chromium (Sw
 - Orbit, pan, zoom, fit, reset, and eased camera focus. Hover tooltips. Click a building to see its details and a GitHub link pinned to the analyzed SHA.
 - Search, language filters, directory focus, a label toggle, and a height metric toggle (lines vs. size).
 - **List view**: an accessible, sortable table with the same data as the 3D scene.
-- Mobile-specific model: full-bleed canvas, filter drawer, bottom-sheet details, touch orbit and pinch, and a reduced render budget.
+- Mobile-specific model: full-bleed canvas, filter drawer, a **More** sheet with Compare and Embed, bottom-sheet details, touch orbit and pinch, and a reduced render budget.
 - **Time-lapse:** scrub or play through a repository's history and watch its city grow in place (see [Time-lapse](#time-lapse)).
 - **Link previews:** each city has its own 1200×630 preview image, an isometric drawing of its real layout with the repo's stats (see [Link previews](#link-previews)).
 - **Colour views:** recolour the city by recent activity, last change or estimated complexity, with an explicit "unavailable" colour (see [Colour views](#colour-views)).
@@ -151,6 +151,10 @@ On the bundled tauri sample, Rust support takes the dependency layer from 163 im
 
 ![Embed menu](docs/screenshots/embed-menu.png)
 
+**On phones**, Compare and Embed sit behind the **More** (⋯) button in the map toolbar, next to Filters and copy link. It opens a bottom sheet with the same base-ref form (invalid refs are refused before navigating) and the same README and iframe snippets, each copyable. Controls in the sheet are at least 44px tall, and the 36px toolbar button has a 44px hit area. Escape, the close button and tapping outside all close it.
+
+<img src="docs/screenshots/more-sheet-mobile.png" alt="The More sheet on a phone, with Compare and Embed" width="320">
+
 ## Dark theme
 
 The toggle in the header switches between light and dark; without a choice, GitCity follows the system setting. A tiny inline script applies the theme before first paint (no flash), and the 3D scene, preview cards and gallery switch palettes with it (`src/lib/city/palette.ts`). Language and data colours stay the same in both themes.
@@ -251,7 +255,7 @@ Each uncached analysis costs about 3 API requests, plus 1 tarball download and *
 - **Integration (mocked GitHub):** a full analysis, plus these cases: 404 or private, private-flag refusal, empty repository, rate limits (403/429 with reset), 5xx, network failure, timeout, truncated tree, tarball failure, a redirect to a foreign host, oversized files, content budget, a rate-limited history call, the no-token window, file limits, and a 20k-file tree.
 - **Component:** detail-panel unavailable states, aggregates, sidebar search/filter, and the filter model.
 - **Features:** import extraction and resolution (JS/TS forms, tsconfig paths, workspaces, Python relative/absolute, Rust `mod` layouts, `crate`/`super`/`self` paths, inline test modules and workspace crates, Go grouped imports, module prefixes, nested modules and externals), the Rust/Go dependency section on old snapshots, colour-view bucketing and unavailable states, compare classification (blob SHA and fallback) and shared-plan frames, building-level edges, ref validation, gallery listing, the `ref` analysis path (no `latest` move) and the README card route.
-- **E2E (Playwright, desktop + Pixel 7):** colour views, dependency arcs and the detail-panel import lists, theme toggle persistence, compare (mocked analyses, change list, Base/Head switching, invalid refs refused client-side), gallery, embed snippets, frame headers, and earlier: landing, validation, URL normalisation with mocked progress, error states, 404, search → detail panel, clicking a building, language filter + list view + sorting, camera controls and shortcuts, directory focus, touch orbit + tap-to-select + bottom sheet, the filter drawer, no horizontal overflow, and zero console errors.
+- **E2E (Playwright, desktop + Pixel 7):** colour views, dependency arcs and the detail-panel import lists, theme toggle persistence, compare (mocked analyses, change list, Base/Head switching, invalid refs refused client-side), gallery, embed snippets, the phone **More** sheet at 390px (44px targets, invalid ref refused, README snippet copied, Escape/outside-tap close, no overflow), frame headers, and earlier: landing, validation, URL normalisation with mocked progress, error states, 404, search → detail panel, clicking a building, language filter + list view + sorting, camera controls and shortcuts, directory focus, touch orbit + tap-to-select + bottom sheet, the filter drawer, no horizontal overflow, and zero console errors.
 
 ## Known limitations
 
@@ -266,7 +270,6 @@ Each uncached analysis costs about 3 API requests, plus 1 tarball download and *
 - **Dependency arcs** cover JavaScript/TypeScript, Python, Rust and Go. Extraction is lexical; `tsconfig` `extends` and bundler-specific aliases are not followed.
 - **Rust:** only `[package] name` is read from `Cargo.toml`. Not followed: `#[path = "…"]` attributes, `[lib]`/`[[bin]]` `path` and `name` overrides (a `mod` in a `[[bin]]` root outside `src/main.rs` counts as unresolved), renamed dependencies (`foo = { package = "bar" }`), modules generated by macros or `build.rs`, and 2015-edition paths without `crate::`. `crate::` in `tests/`, `examples/`, `benches/` and `src/bin/` files resolves against the package's library or main root. Paths written inline in expressions (`crate::a::f()`) are not imports and are not read.
 - **Go:** build tags and `//go:build` constraints are ignored (every non-test file in the package is linked), as are `replace` directives and `vendor/`.
-- **Compare and Embed menus** are in the desktop top bar; on phones, open `/compare/owner/repo` directly.
 - **The gallery is unmoderated:** it lists any public repository someone built. Use `GALLERY_EXCLUDE` to hide one.
 
 ## Deployment

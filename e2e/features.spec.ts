@@ -118,3 +118,79 @@ test.describe("gallery and embeds", () => {
     expect((await request.get("/")).headers()["x-frame-options"]).toBe("DENY");
   });
 });
+
+test.describe("mobile compare and embed sheet", () => {
+  test.skip(({ isMobile }) => !isMobile, "the More button is the phone entry point; desktop uses the top-bar menus");
+
+  test("More opens Compare and Embed: invalid refs are refused, the README snippet copies, Escape and outside taps close", async ({ page, context }) => {
+    const c = watchConsole(page);
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.route("**/api/analyze?**", (route) =>
+      route.fulfill({ contentType: "application/x-ndjson", body: ndjson([{ type: "result", snapshot: liveSnapshot(), permalink: null }]) }),
+    );
+    const navigations: string[] = [];
+    page.on("request", (r) => {
+      if (new URL(r.url()).pathname.startsWith("/compare/")) navigations.push(r.url());
+    });
+    await page.goto("/city/acme/demo");
+    await waitForCity(page);
+
+    const more = page.getByTestId("more-menu");
+    // The 36px button's hit area is 44px: its ::after measures 44 and a tap just outside the border lands on it.
+    const hit = await more.evaluate((el) => {
+      const cs = getComputedStyle(el, "::after");
+      return { width: cs.width, height: cs.height };
+    });
+    expect(parseFloat(hit.width)).toBeGreaterThanOrEqual(44);
+    expect(parseFloat(hit.height)).toBeGreaterThanOrEqual(44);
+    const mb = (await more.boundingBox())!;
+    expect(await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest("[data-testid=more-menu]") !== null, [mb.x + mb.width + 3, mb.y + mb.height / 2])).toBe(true);
+    await more.tap();
+    const sheet = page.getByTestId("more-sheet");
+    await expect(sheet).toBeVisible();
+
+    // Touch targets inside the sheet are at least 44px tall.
+    for (const target of [
+      sheet.getByRole("textbox", { name: /Base/ }),
+      sheet.getByRole("button", { name: "Compare", exact: true }),
+      sheet.getByRole("tab", { name: "README image" }),
+      sheet.getByRole("button", { name: "Copy" }),
+      sheet.getByRole("button", { name: "Close", exact: true }),
+    ]) {
+      expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    }
+
+    // An invalid ref is refused client-side: no navigation to /compare.
+    await sheet.getByRole("textbox", { name: /Base/ }).fill("../etc");
+    await sheet.getByRole("button", { name: "Compare", exact: true }).tap();
+    await expect(sheet.getByRole("alert")).toHaveText("Use a branch, tag or commit SHA.");
+    expect(navigations).toEqual([]);
+    await expect(page).toHaveURL(/\/city\/acme\/demo$/);
+
+    // Copy the README snippet.
+    await sheet.getByRole("button", { name: "Copy" }).tap();
+    await expect(sheet.getByRole("button", { name: "Copied" })).toBeVisible();
+    // The Windows clipboard stores CRLF line endings; compare the text itself.
+    const copied = (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, "\n");
+    expect(copied).toBe(await sheet.getByTestId("embed-markdown").textContent());
+    expect(copied).toContain("/api/card/acme/demo?theme=dark");
+    expect(copied).toContain("<picture>");
+
+    // No horizontal overflow at 390px, with the sheet open.
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    expect(await sheet.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+
+    // Escape closes and returns focus to the More button.
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+    await expect(more).toBeFocused();
+
+    // Tapping outside the sheet closes it too.
+    await more.tap();
+    await expect(sheet).toBeVisible();
+    await page.touchscreen.tap(195, 40);
+    await expect(sheet).toBeHidden();
+    c.expectClean();
+  });
+});
