@@ -50,5 +50,11 @@
 - [x] Persisted snapshots (Vercel Blob) for permanent share links `/city/owner/repo/<sha>`
 - [x] Shared cache across instances (latest pointer, 1 h) + Vercel Firewall rate limit
 - [x] Per-city link-preview images (isometric render of the real layout, snapshot-backed)
-- [ ] Dark theme
+- [x] Dark theme (system default + toggle, theme-aware scene, cards and gallery)
+- [x] Colour views: activity, last change, complexity (explicit unavailable colour)
+- [x] Dependency layer: JS/TS + Python import extraction/resolution, arcs, detail-panel lists
+- [x] Compare two commits on one shared plan (blob-SHA exact diffs, analysis by ref)
+- [x] Gallery of recently built cities; README image card (light/dark) and iframe embed
+- [ ] Dependency layer for Rust, Go, Java
+- [ ] Compare/Embed entry points in the mobile toolbar
 - [ ] Web Worker layout for > 20k-file repositories
